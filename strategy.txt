@@ -1,0 +1,532 @@
+# Tank Arena Strategy Control Reference
+
+## Overview
+
+This document is the instruction reference for an AI model controlling tanks
+via natural language strategy commands. Instead of sending dozens of low-level
+per-frame commands, a single strategy request tells the game what to do and
+the engine handles navigation, aiming, and shooting automatically.
+
+**IMPORTANT FOR AI MODELS**: The game uses regex-based pattern matching, NOT
+true natural language understanding. You MUST normalize user requests into the
+exact command formats documented below. Fix typos, rephrase conversational
+language, and ensure commands match the supported patterns before sending them
+to the API.
+
+---
+
+## TL;DR for AI Models
+
+**Your Role:** Act as a command normalizer + tactical advisor
+
+**Key Responsibilities:**
+1. ✅ Fix typos and spelling errors in user commands
+2. ✅ Convert conversational language → structured commands
+3. ✅ Validate cell coordinates (A-R, 1-12) before sending
+4. ✅ Remove polite words ("please", "can you", etc.)
+5. ✅ Use supported synonyms from the lists below
+6. ✅ Ensure proper spacing between all words
+7. ✅ Translate abstract goals → concrete strategies
+8. ❌ NEVER send commands with invalid cells or unsupported verbs
+
+**Command Template:**
+```
+[verb] [preposition] [cell(s)] [and] [shoot-verb] [target] [detection-phrase]
+```
+
+**Supported Verbs (use these only):**
+- Move: move, go, travel, navigate, drive, head, proceed, advance, retreat
+- Patrol: patrol, circle, loop, alternate, "go back and forth"
+- Guard: guard, defend, hold, protect, secure, camp
+- Face: face, turn, rotate, look, point, aim
+- Shoot: shoot, fire, attack, engage
+
+**Cell Bounds:** Columns A-R (18 cols), Rows 1-12 (12 rows)
+
+**Quick Examples:**
+- User: "patroll B2 to B9" → Send: `"patrol between B2 and B9"`
+- User: "pls go to cell i6?" → Send: `"move to I6"`
+- User: "shoot bad guys on sight" → Send: `"shoot at enemies in sight"`
+
+---
+
+## Strategy Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/player1/strategy` | Set strategy for Blue tank (player 1) |
+| `POST` | `/player2/strategy` | Set strategy for Red tank (player 2, 2P only) |
+| `GET`  | `/state`            | Full game state (positions, health, phase) |
+
+**Base URL:** `http://localhost:8080`
+
+---
+
+## Strategy Request Format
+
+```
+POST /player1/strategy
+Content-Type: application/json
+
+{"text": "patrol between B2 and B9 and shoot at anything in your sight"}
+```
+
+The `text` field contains a structured command string. The game parses it using
+regex patterns and executes it tick-by-tick automatically. Sending a new strategy
+replaces the previous one.
+
+---
+
+## Supported Strategies
+
+### Core Command Types
+
+| Command Type | Supported Verbs | Example Text |
+|-------------|-----------------|-------------|
+| **Move to cell** | move, go, travel, navigate, drive, head, proceed, advance, retreat | `"move to I6"`, `"go to I6"`, `"navigate towards cell I6"`, `"advance to R12"` |
+| **Patrol between cells** | patrol, circle, loop, alternate, "go back and forth" | `"patrol between C3 and C9"`, `"loop from B2 to B9"`, `"circle between C3 and C9"` |
+| **Guard a position** | guard, defend, hold, protect, secure, camp | `"guard E5"`, `"defend position E5"`, `"hold E5"`, `"camp at E5"` |
+| **Face a direction** | face, turn, rotate, look, point, aim | `"face north"`, `"turn east"`, `"rotate northeast"`, `"look se"` |
+| **Shoot once** | shoot, fire, attack, engage | `"shoot"`, `"fire"`, `"attack"` |
+| **Shoot on sight** | (same verbs) | `"shoot at anything in sight"`, `"fire at enemies in view"`, `"engage hostiles on sight"` |
+
+### Synonym Support Details
+
+**Movement Prepositions**: to, towards, toward, at
+- `"move to I6"` ✓
+- `"go towards I6"` ✓
+- `"navigate at I6"` ✓
+
+**Patrol Connectors**: "between X and Y", "from X to Y"
+- `"patrol between B2 and B9"` ✓
+- `"loop from B2 to B9"` ✓
+
+**Optional "cell" Prefix**: All position commands accept optional "cell" before coordinates
+- `"move to I6"` ✓
+- `"move to cell I6"` ✓
+
+**Cardinal Directions**: Supports both abbreviations and full words
+- `"face n"`, `"face north"` ✓
+- `"turn ne"`, `"turn northeast"` ✓
+- `"rotate se"`, `"look southeast"` ✓
+
+**Target Variations for Shoot-on-Sight**: anything, anyone, enemies, targets, hostiles, contacts, opponents
+- `"shoot at anything in sight"` ✓
+- `"fire at enemies in view"` ✓
+- `"engage hostiles within range"` ✓
+- `"attack opponents on sight"` ✓
+
+**View/Detection Phrases**: in sight, in view, in range, on sight, on contact, within range
+- `"shoot enemies in sight"` ✓
+- `"fire at targets in view"` ✓
+- `"attack on contact"` ✓
+
+---
+
+## AI MODEL INSTRUCTIONS: Command Normalization
+
+**CRITICAL**: You must normalize user input before sending it to the API. The
+game uses regex-based pattern matching and will SILENTLY IGNORE commands that
+don't match the patterns above. Follow these rules:
+
+### 1. Fix Typos and Misspellings
+- User: "patroll between B2 and B9"
+- Normalized: `"patrol between B2 and B9"` ✓
+- User: "moove to I6"
+- Normalized: `"move to I6"` ✓
+
+### 2. Convert Conversational Language to Commands
+- User: "can you please move to I6?"
+- Normalized: `"move to I6"` ✓
+- User: "I want you to defend the base at E5"
+- Normalized: `"guard E5"` ✓
+- User: "go back and forth between those two points"
+- Ask for clarification: "Which cells should I patrol between?"
+
+### 3. Validate Cell Coordinates (A-R, 1-12)
+- Valid: A1, I6, R12, A12 (18 columns × 12 rows)
+- Invalid: S1 (column S doesn't exist), Z99, A13, I0
+- If user provides invalid cell, correct it or ask for clarification
+
+### 4. Resolve Ambiguous References
+- User: "go there" → Ask: "Which cell should I move to?"
+- User: "attack him" → Use: `"shoot at anything in sight"` (automatic targeting)
+- User: "patrol the left side" → Ask: "Which cells on the left side?"
+
+### 5. Handle Abstract Commands
+- User: "be aggressive" → `"patrol between [central cells] and shoot at anything in sight"`
+- User: "play defensively" → `"guard [safe position] and shoot at enemies in sight"`
+- User: "flank the enemy" → Use game state to pick appropriate patrol path
+
+### 6. Ensure Required Keywords Present
+- "patrol" requires "between" or "from" + two cells
+- "move/go" requires "to/towards" + one cell
+- Shoot-on-sight requires target word + detection phrase
+- Commands MUST be separated properly (spaces between words)
+
+### 7. Use Supported Synonyms When Available
+Choose the most appropriate synonym from the supported list:
+- Movement: move, go, navigate, advance, retreat
+- Combat: shoot, fire, engage, attack
+- Defense: guard, defend, hold, protect
+
+### 8. Examples of Normalization
+
+| User Input | Normalized Command | Reasoning |
+|-----------|-------------------|-----------|
+| "can u pls go to i6?" | `"move to I6"` | Removed politeness, fixed case, used supported verb |
+| "patroll between B2-B9" | `"patrol between B2 and B9"` | Fixed typo, changed dash to "and" |
+| "defend the position at cell E5 please" | `"guard E5"` | Used synonym, removed extra words |
+| "shoot bad guys on sight" | `"shoot at enemies in sight"` | Changed "bad guys" to supported "enemies" |
+| "go Northeast" | `"face northeast"` | Changed to compass command, lowercased direction |
+| "advance toward cell Z99" | Error + Ask for valid cell | Z99 out of bounds |
+| "circle around B2 to B9 attacking anything" | `"circle between B2 and B9 and shoot at anything in sight"` | Split into compound command |
+
+---
+
+## Grid Cell Format
+
+Cells use column letter + row number.
+
+- Columns: A-R (left to right, 18 columns)
+- Rows: 1-12 (top to bottom, 12 rows)
+- Cell size: 50 x 50 pixels
+
+Examples:
+- `A1` = top-left corner
+- `R12` = bottom-right corner
+- `I6` = roughly center of the arena
+
+---
+
+## Compound Commands
+
+Combine strategies with "and":
+
+- `"patrol between B2 and B9 and shoot at anything in your sight"`
+- `"move to I6 and shoot at anything in your sight"`
+- `"guard position E5 and shoot at enemies in your sight"`
+
+---
+
+## Clearing a Strategy
+
+Send `{"text": "stop"}` or `{"text": ""}` to clear the active strategy.
+The tank reverts to idle.
+
+---
+
+## Strategy Response
+
+The API returns what it parsed so you can verify the interpretation:
+
+```json
+{
+  "status": "ok",
+  "text": "patrol between B2 and B9 and shoot at anything in your sight",
+  "parsed": [
+    {"type": "PATROL", "params": {"cell_a": "B2", "cell_b": "B9"}},
+    {"type": "SHOOT_ON_SIGHT", "params": {}}
+  ],
+  "player": 1
+}
+```
+
+If the text cannot be parsed, the API returns a `400` error with details.
+
+---
+
+## Strategy Playbooks
+
+### Patrol and Shoot
+```
+POST /player1/strategy  {"text": "patrol between B2 and B9 and shoot at anything in your sight"}
+```
+The tank continuously moves between cells B2 and B9, firing whenever the
+enemy enters its field of view with a clear line of sight.
+
+### Guard a Position
+```
+POST /player1/strategy  {"text": "guard position I6 and shoot at enemies in your sight"}
+```
+The tank navigates to cell I6 and holds position, shooting any enemy that
+comes into view.
+
+### Move to a Location
+```
+POST /player1/strategy  {"text": "move to E3"}
+```
+The tank navigates to cell E3 with obstacle avoidance, then stops.
+
+### Face and Hold
+```
+POST /player1/strategy  {"text": "face east and shoot at anything in your sight"}
+```
+The tank rotates to face east and fires at any enemy in its FOV.
+
+---
+
+## Reading Game State
+
+Use `GET /state` to understand the current situation before issuing a strategy.
+
+```json
+{
+  "phase": "playing",
+  "mode": "1p",
+  "tick": 142,
+  "tanks": {
+    "player1": {
+      "color": "Blue",
+      "x": 125.0,
+      "y": 275.0,
+      "angle": 90.0,
+      "health": 3,
+      "alive": true,
+      "bullets": []
+    },
+    "player2": {
+      "color": "Red",
+      "x": 775.0,
+      "y": 275.0,
+      "angle": 270.0,
+      "health": 2,
+      "alive": true,
+      "bullets": []
+    }
+  },
+  "winner": null,
+  "strategies": {
+    "player1": "patrol between B2 and B9 and shoot at anything in your sight",
+    "player2": null
+  }
+}
+```
+
+### Key Fields
+
+| Field | Description |
+|-------|-------------|
+| `phase` | `title_screen`, `playing`, or `game_over`. Only send strategies when `playing`. |
+| `tanks.*.x / y` | Pixel position. Arena is 900 wide x 600 tall. |
+| `tanks.*.angle` | Facing angle: 0=up, 90=right, 180=down, 270=left. |
+| `tanks.*.health` | Hit points 0-3. 0 = dead. |
+| `tanks.*.alive` | Whether the tank is still active. |
+| `winner` | Color string when game is over, otherwise null. |
+| `strategies.*` | The currently active strategy text per player, or null. |
+
+---
+
+## Shoot-on-Sight Behavior
+
+When a strategy includes "shoot at anything in your sight", the tank fires
+automatically when all of these conditions are met:
+
+1. The enemy is within a 60-degree cone from the barrel
+2. The enemy is within 400 pixels
+3. No obstacles block the line of sight
+4. The bullet cooldown (400ms) has elapsed
+
+---
+
+## Arena Layout
+
+- Window: 900 x 600 pixels
+- Grid: 18 columns (A-R) x 12 rows (1-12), 50px cells
+- Obstacles block both movement and line of sight
+- The strategy engine handles obstacle avoidance automatically
+
+---
+
+## Commands That Will NOT Work
+
+These patterns will be SILENTLY IGNORED by the parser. You must rephrase them:
+
+### ❌ Unsupported Verbs
+- "run to I6" → Use: `"move to I6"`
+- "walk to I6" → Use: `"move to I6"`
+- "dash to I6" → Use: `"move to I6"`
+- "rush to I6" → Use: `"advance to I6"`
+
+### ❌ Missing Required Keywords
+- "patrol B2 and B9" → Use: `"patrol between B2 and B9"`
+- "move I6" → Use: `"move to I6"`
+- "shoot enemies" → Use: `"shoot at enemies in sight"`
+
+### ❌ Extra/Polite Words
+- "please move to I6" → Use: `"move to I6"`
+- "can you guard E5?" → Use: `"guard E5"`
+- "I want you to patrol between B2 and B9" → Use: `"patrol between B2 and B9"`
+
+### ❌ Merged Words (must have spaces)
+- "moveto I6" → Use: `"move to I6"`
+- "guardE5" → Use: `"guard E5"`
+
+### ❌ Context-Dependent References
+- "go there" (no specific cell)
+- "attack him" (use automatic targeting instead)
+- "patrol the left side" (specify exact cells)
+
+### ❌ Unsupported High-Level Tactics
+- "be aggressive" (decompose into specific commands)
+- "play defensively" (choose guard position and auto-shoot)
+- "flank the enemy" (plan specific patrol path)
+- "retreat" as standalone (use "retreat to [specific cell]")
+
+---
+
+## Best Practices for AI Models
+
+### Strategic Decision Making
+
+1. **Always poll state first:** Read `GET /state` to check positions, health, and
+   current strategies before making decisions
+2. **Validate before sending:** Ensure all cell coordinates are within bounds (A-R, 1-12)
+   before sending commands to avoid silent failures
+3. **Combine movement with combat:** Use compound commands like `"patrol between B2 and B9
+   and shoot at anything in sight"` so the tank fights while moving
+4. **Monitor health dynamically:**
+   - Health 3: Aggressive patrols and engagement
+   - Health 2: Balanced movement and shooting
+   - Health 1: Defensive guard position or retreat to safe cell
+
+### Command Normalization Workflow
+
+1. **Receive user input** (may contain typos, conversational language, etc.)
+2. **Validate cell coordinates** (A-R, 1-12 bounds checking)
+3. **Fix typos and misspellings** using the supported verb lists
+4. **Convert conversational → structured commands** following the patterns above
+5. **Remove polite words** ("please", "can you", "I want you to")
+6. **Ensure proper spacing** between all words
+7. **Verify pattern match** against supported command formats
+8. **Send normalized command** to API
+9. **Inform user** of what command was sent (for transparency)
+
+### Game State Monitoring
+
+- **Check game phase:** Only send strategies when `phase` is `"playing"`
+- **One strategy at a time:** Sending a new strategy replaces the old one
+- **Read active strategies:** Check `strategies` field in state to see what is currently executing
+- **Player 2 in 1P mode:** The `/player2/strategy` endpoint returns `403` in
+  1-player mode since player 2 is AI-controlled
+
+### Tactical Command Selection
+
+When user gives abstract goals, translate to concrete strategies:
+
+| User Goal | Recommended Strategy |
+|-----------|---------------------|
+| "Be aggressive" | `"patrol between [enemy side cells] and shoot at anything in sight"` |
+| "Play safe" | `"guard [corner cell] and shoot at enemies in sight"` |
+| "Attack enemy" | `"move to [central cell] and shoot at anything in sight"` |
+| "Defend" | `"guard [current position] and shoot at enemies in sight"` |
+| "Scout ahead" | `"move to [forward cell]"` then assess |
+| "Fall back" | `"retreat to [rear cell]"` |
+
+---
+
+## Complete AI Workflow Example
+
+### Scenario: User says "can u pls patroll between B2 and B9 and shoot bad guys?"
+
+**Step 1: Receive Input**
+```
+User input: "can u pls patroll between B2 and B9 and shoot bad guys?"
+```
+
+**Step 2: Normalize Command**
+```
+Detected issues:
+- "can u pls" - polite prefix, remove
+- "patroll" - typo, should be "patrol"
+- "bad guys" - informal, use "enemies"
+- "shoot bad guys" - missing "in sight" detection phrase
+
+Normalized: "patrol between B2 and B9 and shoot at enemies in sight"
+```
+
+**Step 3: Validate Cells**
+```
+Cell B2: Column B (valid, ✓), Row 2 (valid, ✓)
+Cell B9: Column B (valid, ✓), Row 9 (valid, ✓)
+All cells valid ✓
+```
+
+**Step 4: Verify Pattern Match**
+```
+"patrol between B2 and B9" matches PATROL pattern ✓
+"shoot at enemies in sight" matches SHOOT_ON_SIGHT pattern ✓
+```
+
+**Step 5: Send to API**
+```bash
+POST http://localhost:8080/player1/strategy
+Content-Type: application/json
+
+{"text": "patrol between B2 and B9 and shoot at enemies in sight"}
+```
+
+**Step 6: Inform User**
+```
+✓ Strategy set: Your tank will patrol between cells B2 and B9,
+  automatically firing at any enemies that come into view.
+```
+
+---
+
+## Error Handling Examples
+
+### Example 1: Out of Bounds Cell
+```
+User: "move to Z99"
+AI Response: "Cell Z99 is out of bounds. The arena is 18×12 (columns A-R, rows 1-12).
+             Did you mean R12 (bottom-right corner)?"
+```
+
+### Example 2: Invalid Phrasing
+```
+User: "patrol B2 B9"
+AI Detected: Missing "between/from" keyword
+AI Response: "I'll set up a patrol between B2 and B9."
+Normalized: "patrol between B2 and B9"
+```
+
+### Example 3: Typo in Direction
+```
+User: "fase northwest"
+AI Detected: "fase" should be "face"
+AI Response: "Turning to face northwest."
+Normalized: "face northwest"
+```
+
+### Example 4: Ambiguous Command
+```
+User: "go there"
+AI Response: "Which cell would you like me to move to? (e.g., I6 for center,
+             A1 for top-left, R12 for bottom-right)"
+Wait for user clarification before sending command.
+```
+
+---
+
+## Quick Reference: Regex Patterns
+
+For AI developers implementing additional validation:
+
+```regex
+PATROL:  (patrol|circle|loop|alternate|go back and forth) (between|from) [A-R]\d{1,2} (and|to) [A-R]\d{1,2}
+MOVE:    (move|go|travel|navigate|drive|head|proceed|advance|retreat) (to|towards?|at) (?:cell\s+)?[A-R]\d{1,2}
+GUARD:   (guard|defend|hold|protect|secure|camp) (?:position|area)? (?:at\s+)?(?:cell\s+)?[A-R]\d{1,2}
+FACE:    (face|turn|rotate|look|point|aim) (north|south|east|west|northeast|northwest|southeast|southwest|n|s|e|w|ne|nw|se|sw)
+SHOOT:   (shoot|fire|attack|engage) (?:at)? (anything|enemies?|targets?|hostiles?) (?:in|on)? (?:sight|view|range)
+```
+
+---
+
+## Notes
+
+- Tank angle: 0 = up, 90 = right, 180 = down, 270 = left
+- Bullet speed is 7 px/frame, tank speed is 3 px/frame
+- The built-in AI opponent uses patrol, chase, attack, and evade behaviors
+- Strategies and low-level commands can coexist — the strategy runs continuously
+  while manual commands layer on top

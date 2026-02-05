@@ -1,0 +1,10 @@
+# Tanks Game Dependencies
+# Tested with Python 3.12
+
+# Game engine
+pygame>=2.5.0
+
+# API server
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.0.0

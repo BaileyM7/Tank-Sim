@@ -1,0 +1,65 @@
+{
+  "name": "Default Battlefield",
+  "version": 2,
+  "grid": {
+    "columns": 18,
+    "rows": 12,
+    "cell_size": 50
+  },
+  "terrain": [
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"],
+    ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"]
+  ],
+  "obstacles": [
+    {"type": "tree_large", "col": 1,  "row": 0,  "span": [2, 2]},
+    {"type": "tree_small", "col": 0,  "row": 2},
+    {"type": "tree_large", "col": 15, "row": 0,  "span": [2, 2]},
+
+    {"type": "tree_small", "col": 0,  "row": 4},
+    {"type": "tree_small", "col": 17, "row": 4},
+
+    {"type": "tree_small", "col": 0,  "row": 7},
+    {"type": "tree_small", "col": 17, "row": 7},
+
+    {"type": "tree_large", "col": 1,  "row": 10, "span": [2, 2]},
+    {"type": "tree_small", "col": 0,  "row": 9},
+    {"type": "tree_large", "col": 15, "row": 10, "span": [2, 2]},
+
+    {"type": "sandbag_brown", "col": 6,  "row": 3},
+    {"type": "sandbag_brown", "col": 7,  "row": 3},
+    {"type": "sandbag_brown", "col": 8,  "row": 3},
+    {"type": "sandbag_brown", "col": 9,  "row": 3},
+
+    {"type": "sandbag_brown", "col": 12, "row": 2},
+    {"type": "sandbag_brown", "col": 12, "row": 3},
+    {"type": "sandbag_brown", "col": 12, "row": 4},
+    {"type": "sandbag_brown", "col": 12, "row": 5},
+
+
+    {"type": "sandbag_brown", "col": 5,  "row": 7},
+    {"type": "sandbag_brown", "col": 6,  "row": 7},
+    {"type": "sandbag_brown", "col": 7,  "row": 7},
+    {"type": "sandbag_brown", "col": 8,  "row": 7},
+
+
+    {"type": "sandbag_brown", "col": 11, "row": 9},
+    {"type": "sandbag_brown", "col": 12, "row": 9},
+
+    {"type": "sandbag_brown", "col": 10,  "row": 8},
+    {"type": "sandbag_brown", "col": 10,  "row": 9}
+  ],
+  "spawns": {
+    "player1": {"col": 2, "row": 5, "facing": "right"},
+    "player2": {"col": 15, "row": 6, "facing": "left"}
+  }
+}

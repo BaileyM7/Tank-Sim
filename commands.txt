@@ -1,0 +1,483 @@
+# Tank Arena Control Command Playbook
+
+## Overview
+
+This document is the instruction reference for an AI model performing NLP processing.
+The AI translates natural language commands into HTTP API requests that control tanks
+in a 2D top-down arena game.
+
+- **POST** commands to move, rotate, and shoot
+- **GET** game state to read positions, health, and game phase
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | Health check |
+| `GET` | `/state` | Full game state (positions, health, phase) |
+| `POST` | `/player1/command` | Low-level command (Blue tank, player 1) |
+| `POST` | `/player2/command` | Low-level command (Red tank, player 2, 2P only) |
+| `POST` | `/player1/strategy` | Natural language strategy (Blue tank) |
+| `POST` | `/player2/strategy` | Natural language strategy (Red tank, 2P only) |
+
+**Base URL:** `http://localhost:8080`
+
+---
+
+## Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `forward` | Move one step in the direction the tank is facing |
+| `backward` | Move one step opposite to the facing direction |
+| `rotate_left` | Rotate the tank 3 degrees counter-clockwise |
+| `rotate_right` | Rotate the tank 3 degrees clockwise |
+| `shoot` | Fire a bullet from the barrel (400ms cooldown) |
+| `stop` | No-op / stop issuing movement |
+| `auto_shoot_on` | Enable automatic shooting when enemy is in line of sight |
+| `auto_shoot_off` | Disable automatic shooting |
+
+**Command format:**
+```json
+{"command": "forward"}
+```
+
+**Important:** Commands are discrete per-frame actions, not continuous. To move a
+meaningful distance, send `forward` repeatedly. Rotation is 3 degrees per command,
+so a 90-degree turn requires ~30 `rotate_right` or `rotate_left` commands.
+
+---
+
+## Game State Response (GET /state)
+
+```json
+{
+  "phase": "playing",
+  "mode": "1p",
+  "tick": 142,
+  "tanks": {
+    "player1": {
+      "color": "Blue",
+      "x": 125.0,
+      "y": 275.0,
+      "angle": 90.0,
+      "health": 3,
+      "alive": true,
+      "bullets": [
+        {"x": 200.5, "y": 275.0, "angle": 90.0}
+      ]
+    },
+    "player2": {
+      "color": "Red",
+      "x": 775.0,
+      "y": 275.0,
+      "angle": 270.0,
+      "health": 2,
+      "alive": true,
+      "bullets": []
+    }
+  },
+  "winner": null,
+  "strategies": {
+    "player1": "patrol between B2 and B9 and shoot at anything in your sight",
+    "player2": null
+  }
+}
+```
+
+### State Fields
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `phase` | `title_screen`, `playing`, `game_over` | Current game phase |
+| `mode` | `1p`, `2p`, `demo`, `null` | Game mode |
+| `tick` | integer | Frame counter since game start |
+| `tanks.*.x` | float | Horizontal pixel position (0 = left, 900 = right) |
+| `tanks.*.y` | float | Vertical pixel position (0 = top, 600 = bottom) |
+| `tanks.*.angle` | float | Facing angle in degrees (0=up, 90=right, 180=down, 270=left) |
+| `tanks.*.health` | 0-3 | Hit points remaining (3 = full, 0 = dead) |
+| `tanks.*.alive` | boolean | Whether the tank is still active |
+| `tanks.*.bullets` | array | Active bullets fired by this tank |
+| `winner` | color string or null | Winner's color when game is over |
+| `strategies.*` | string or null | Active NL strategy text per player |
+
+### Arena Dimensions
+
+- Window: 900 x 600 pixels
+- Grid: 18 columns x 12 rows, 50px cells
+- Obstacles block movement and line of sight
+
+---
+
+## Auto-Shoot System
+
+When `auto_shoot_on` is sent, the tank will automatically fire whenever:
+1. The enemy tank is within a 60-degree cone extending from the barrel
+2. The enemy is within 400 pixels range
+3. No obstacles block the line of sight between the two tanks
+4. The bullet cooldown (400ms) has elapsed
+
+The player can still send manual `shoot` commands while auto-shoot is enabled.
+Send `auto_shoot_off` to disable.
+
+---
+
+## Natural Language Strategies (Recommended)
+
+Instead of sending dozens of low-level commands, you can send a single natural
+language strategy and the game will parse and execute it tick-by-tick automatically.
+
+**This is the preferred approach for the NLP model.** Send the raw natural language
+text to the strategy endpoint; the game handles all navigation, aiming, and shooting
+internally.
+
+### Strategy Endpoints
+
+```
+POST /player1/strategy  {"text": "patrol between B2 and B9 and shoot at anything in your sight"}
+POST /player2/strategy  {"text": "guard position E5"}
+```
+
+### Supported Strategies
+
+| Strategy | Example Text |
+|----------|-------------|
+| Move to cell | `"move to I6"` |
+| Patrol between cells | `"patrol between C3 and C9"` |
+| Guard a position | `"guard position E5"` |
+| Face a direction | `"face north"` (also: south, east, west, ne, nw, se, sw) |
+| Shoot once | `"shoot"` |
+| Shoot on sight | `"shoot at anything in your sight"` |
+
+### Grid Cell Format
+
+Cells use column letter + row number. Columns are A-R (left to right),
+rows are 1-12 (top to bottom). Examples: A1 (top-left), R12 (bottom-right),
+I6 (center).
+
+### Compound Commands
+
+Combine strategies with "and":
+- `"patrol between B2 and B9 and shoot at anything in your sight"`
+- `"move to I6 and shoot at anything in your sight"`
+- `"guard position E5 and shoot at enemies in your sight"`
+
+### Clearing a Strategy
+
+Send `{"text": "stop"}` or `{"text": ""}` to clear the active strategy.
+The tank reverts to manual-only control.
+
+### Strategy Response
+
+The API returns what it parsed, so you can verify:
+```json
+{
+  "status": "ok",
+  "text": "patrol between B2 and B9 and shoot at anything in your sight",
+  "parsed": [
+    {"type": "PATROL", "params": {"cell_a": "B2", "cell_b": "B9"}},
+    {"type": "SHOOT_ON_SIGHT", "params": {}}
+  ],
+  "player": 1
+}
+```
+
+### Coexistence with Low-Level Commands
+
+- Strategies and low-level commands coexist. The strategy runs continuously
+  while manual commands layer on top.
+- Sending a new strategy replaces the previous one.
+- The active strategy is visible in `GET /state` under `strategies`.
+
+---
+
+## Scenario Playbooks
+
+### Low-Level Command Examples
+
+The following scenarios use low-level per-frame commands. For most use cases,
+prefer the strategy endpoint above instead.
+
+### 1. Basic Movement and Stop
+
+**Objective:** Move forward and stop
+
+```
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "stop"}
+```
+
+---
+
+### 2. Turn Left 90 Degrees
+
+**Objective:** Rotate the tank to face left
+
+```
+# 90 degrees / 3 degrees per command = 30 commands
+POST /player1/command  {"command": "rotate_left"}
+# ... repeat 30 times total ...
+POST /player1/command  {"command": "rotate_left"}
+```
+
+**Tip:** Poll `GET /state` and check `tanks.player1.angle` to verify the turn
+is complete rather than counting exact commands.
+
+---
+
+### 3. Turn Right 90 Degrees
+
+**Objective:** Rotate the tank to face right
+
+```
+POST /player1/command  {"command": "rotate_right"}
+# ... repeat 30 times total ...
+POST /player1/command  {"command": "rotate_right"}
+```
+
+---
+
+### 4. Advance and Shoot
+
+**Objective:** Move toward enemy and fire
+
+```
+# Move forward several steps
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+
+# Fire
+POST /player1/command  {"command": "shoot"}
+```
+
+---
+
+### 5. Enable Auto-Shoot and Advance
+
+**Objective:** Let the tank handle shooting while you focus on movement
+
+```
+# Enable auto-shoot (tank fires when enemy is in sight)
+POST /player1/command  {"command": "auto_shoot_on"}
+
+# Now just drive toward the enemy — shooting happens automatically
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+```
+
+---
+
+### 6. Retreat
+
+**Objective:** Back away from danger
+
+```
+POST /player1/command  {"command": "backward"}
+POST /player1/command  {"command": "backward"}
+POST /player1/command  {"command": "backward"}
+POST /player1/command  {"command": "backward"}
+POST /player1/command  {"command": "stop"}
+```
+
+---
+
+### 7. Strafe and Shoot (Circle Enemy)
+
+**Objective:** Rotate to face enemy, fire, then reposition
+
+```
+# Aim toward enemy
+POST /player1/command  {"command": "rotate_right"}
+POST /player1/command  {"command": "rotate_right"}
+POST /player1/command  {"command": "rotate_right"}
+
+# Fire
+POST /player1/command  {"command": "shoot"}
+
+# Move to new position
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+
+# Re-aim and fire again
+POST /player1/command  {"command": "rotate_right"}
+POST /player1/command  {"command": "shoot"}
+```
+
+---
+
+### 8. Flanking Maneuver
+
+**Objective:** Move around the side of the enemy
+
+```
+# Turn perpendicular to enemy
+POST /player1/command  {"command": "rotate_right"}
+# ... repeat to face 90 degrees from enemy ...
+
+# Move laterally
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+
+# Turn to face enemy
+POST /player1/command  {"command": "rotate_left"}
+# ... repeat until aimed at enemy ...
+
+# Fire
+POST /player1/command  {"command": "shoot"}
+POST /player1/command  {"command": "shoot"}
+```
+
+---
+
+### 9. Defensive Hold
+
+**Objective:** Stay in position with auto-shoot guarding
+
+```
+# Enable auto-shoot to fire at anything in view
+POST /player1/command  {"command": "auto_shoot_on"}
+
+# Stay put — the auto-shoot system handles targeting
+# Periodically poll state to monitor health
+GET /state
+```
+
+---
+
+### 10. Seek and Destroy
+
+**Objective:** Actively hunt the enemy using state polling
+
+```
+# 1. Enable auto-shoot
+POST /player1/command  {"command": "auto_shoot_on"}
+
+# 2. Poll state to find enemy position
+GET /state
+# Read tanks.player2.x, tanks.player2.y to determine enemy location
+
+# 3. Calculate direction to enemy from your position
+#    Compare tanks.player1.angle to the needed angle
+
+# 4. Rotate toward enemy
+POST /player1/command  {"command": "rotate_right"}
+# ... until facing enemy ...
+
+# 5. Advance — auto-shoot fires when line of sight is clear
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+POST /player1/command  {"command": "forward"}
+
+# 6. Repeat: poll state, adjust heading, advance
+```
+
+---
+
+## Strategy Playbooks (Recommended)
+
+These use the strategy endpoint and require only a single API call:
+
+### Patrol and Shoot
+```
+POST /player1/strategy  {"text": "patrol between B2 and B9 and shoot at anything in your sight"}
+```
+The tank will continuously move between cells B2 and B9, firing whenever the
+enemy enters its field of view with a clear line of sight.
+
+### Guard a Position
+```
+POST /player1/strategy  {"text": "guard position I6 and shoot at enemies in your sight"}
+```
+The tank navigates to cell I6 and holds position, shooting any enemy that
+comes into view.
+
+### Move to a Location
+```
+POST /player1/strategy  {"text": "move to E3"}
+```
+The tank navigates to cell E3 with obstacle avoidance, then stops.
+
+### Face and Hold
+```
+POST /player1/strategy  {"text": "face east and shoot at anything in your sight"}
+```
+The tank rotates to face east and fires at any enemy in its FOV.
+
+---
+
+## State-Driven Control Loop (Low-Level)
+
+For manual control via the low-level command endpoint, the recommended pattern is:
+
+```
+loop:
+    1. GET /state
+    2. Read own tank position (x, y, angle, health)
+    3. Read enemy tank position (x, y, alive)
+    4. Calculate angle to enemy
+    5. If angle error > 3 degrees: rotate toward enemy
+    6. If angle error < 10 degrees and distance reasonable: move forward
+    7. Auto-shoot handles firing, OR manually shoot when aimed
+    8. If health is low: consider retreating (backward or rotate away)
+    9. Sleep briefly to avoid flooding the API
+```
+
+For most use cases, prefer the strategy endpoint instead — it handles all of
+this internally with a single API call.
+
+---
+
+## Obstacle Avoidance
+
+The game has built-in obstacle avoidance for API-controlled tanks. When you send
+`forward` and the path is blocked, the system automatically steers around the
+obstruction. You do not need to manually navigate around obstacles.
+
+However, obstacles **do** block line of sight for auto-shoot. If there is a wall
+between your tank and the enemy, auto-shoot will not fire even if the enemy is
+within the FOV cone.
+
+---
+
+## Best Practices
+
+1. **Poll state frequently:** Use `GET /state` to track positions, health, and
+   game phase before deciding actions
+2. **Use auto-shoot:** Enable `auto_shoot_on` to let the game handle aiming and
+   firing while you focus on movement and positioning
+3. **Rotate in small increments:** Each `rotate_left`/`rotate_right` is only 3
+   degrees. Check state to confirm heading rather than counting commands
+4. **Commands are per-frame:** Each command applies for a single game tick (1/30th
+   of a second). Sustained movement requires repeated `forward` commands
+5. **Respect cooldowns:** Bullets have a 400ms cooldown. Sending `shoot` faster
+   than that has no effect
+6. **Check game phase:** Only send commands when `phase` is `"playing"`. Commands
+   are ignored during `title_screen` or `game_over`
+7. **Health monitoring:** Each tank has 3 HP. Poll state to track damage and
+   decide whether to press the attack or retreat
+
+---
+
+## Notes
+
+- The arena is 900x600 pixels with a 50px grid
+- Tank angle: 0 = up, 90 = right, 180 = down, 270 = left
+- Bullet speed is 7 pixels/frame, tank speed is 3 pixels/frame
+- Bullets despawn on hitting obstacles or going off-screen
+- In 1-player mode, only `/player1/command` and `/player1/strategy` are available (player 2 is AI)
+- In 2-player mode, both players have `/command` and `/strategy` endpoints
+- The built-in AI opponent uses patrol, chase, attack, and evade behaviors
+- Strategy endpoint is preferred over low-level commands for NLP integration
