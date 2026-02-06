@@ -504,7 +504,7 @@ def _run_game(level_path: Path, headless: bool = False):
             while True:
                 try:
                     item = p1_queue.get_nowait()
-                    print(f"[MAIN LOOP] Received from p1_queue: {item}")
+                    # print(f"[MAIN LOOP] Received from p1_queue: {item}")
                     if isinstance(item, tuple) and item[0] == "strategy":
                         _, text, parsed_cmds = item
                         p1_executor = CommandExecutor(level=current_level)

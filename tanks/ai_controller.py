@@ -109,7 +109,7 @@ class AIController:
             # Initialize game start time on first tick
             if self._game_start_time is None:
                 self._game_start_time = current_time
-                print("AI: Waiting 3 seconds before engaging...")
+                # print("AI: Waiting 3 seconds before engaging...")
 
             # Startup delay - give player time to get their bearings
             if current_time - self._game_start_time < self.STARTUP_DELAY:
@@ -176,9 +176,9 @@ class AIController:
             self._executor = CommandExecutor(level=self.level)
             self._executor.set_commands(parsed_commands)
             # Debug output
-            cmd_types = [f"{cmd.type.name}" for cmd in parsed_commands]
-            print(f"AI Strategy: {strategy_text}")
-            print(f"  Parsed commands: {cmd_types}")
+            # cmd_types = [f"{cmd.type.name}" for cmd in parsed_commands]
+            # print(f"AI Strategy: {strategy_text}")
+            # print(f"  Parsed commands: {cmd_types}")
 
     def _generate_assault_strategy(self, enemy_cell: str) -> str:
         """Generate a direct assault strategy toward enemy position."""

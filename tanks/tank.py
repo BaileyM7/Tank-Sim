@@ -98,22 +98,22 @@ class Tank:
             bx = self.x + math.sin(rad) * spawn_dist
             by = self.y - math.cos(rad) * spawn_dist
             self.bullets.append(Bullet(bx, by, self.angle, self.color))
-            print(f"Tank {self.color} fired bullet! Total bullets: {len(self.bullets)}")
+            # print(f"Tank {self.color} fired bullet! Total bullets: {len(self.bullets)}")
         else:
-            print(f"Tank {self.color} shoot blocked by cooldown: {cooldown_elapsed}ms < {BULLET_COOLDOWN_MS}ms")
+            pass  # print(f"Tank {self.color} shoot blocked by cooldown")
 
     def apply_command(self, command: TankCommand, level: Level) -> None:
         if not self.alive:
-            print(f"Tank {self.color} apply_command: not alive, ignoring {command}")
+            # print(f"Tank {self.color} apply_command: not alive, ignoring {command}")
             return
 
         # First, check if we're stuck and need to force unstuck
         if not self._can_move_to(self.x, self.y, level):
-            print(f"Tank {self.color} is stuck at ({self.x:.1f}, {self.y:.1f}), force unstucking")
+            # print(f"Tank {self.color} is stuck at ({self.x:.1f}, {self.y:.1f}), force unstucking")
             self._force_unstuck(level)
             return
 
-        print(f"Tank {self.color} applying command: {command}")
+        # print(f"Tank {self.color} applying command: {command}")
 
         if command == TankCommand.ROTATE_LEFT:
             self.angle = (self.angle - TANK_ROTATION_SPEED) % 360
