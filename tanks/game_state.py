@@ -29,6 +29,7 @@ class GameState:
     strategies: Dict[str, Optional[str]] = field(
         default_factory=lambda: {"player1": None, "player2": None}
     )
+    demo: Optional[Dict] = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def snapshot(self) -> dict:
@@ -52,6 +53,7 @@ class GameState:
                 },
                 "winner": self.winner,
                 "strategies": dict(self.strategies),
+                "demo": dict(self.demo) if self.demo else None,
             }
 
     def set_strategy(self, player: str, text: Optional[str]) -> None:

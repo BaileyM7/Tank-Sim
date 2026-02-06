@@ -1,8 +1,9 @@
-"""Entry point: python -m tanks [--manual] [level_file]
+"""Entry point: python -m tanks [--manual] [--headless] [level_file]
 
 Modes:
-    (default)  Title screen -> 1P or 2P game via API
-    --manual   Drive a tank with WASD, shoot with Space (legacy mode)
+    (default)    Title screen -> 1P or 2P game via API
+    --manual     Drive a tank with WASD, shoot with Space (legacy mode)
+    --headless   Run without display; game controlled entirely via API/browser
 
 Keyboard controls (manual mode):
     W/S   - forward / backward
@@ -18,10 +19,15 @@ Title screen controls:
     ESC     - quit
 """
 
+import os
 import sys
 import threading
 from queue import Queue, Empty
 from pathlib import Path
+
+# Set dummy video driver BEFORE importing pygame when headless
+if "--headless" in sys.argv:
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 import pygame
 
@@ -42,6 +48,13 @@ from tanks.demo_controller import DemoController, DEMO_SCENARIOS
 from tanks.navigation import is_in_sight, angle_to_target, angle_error
 from tanks.obstacle_avoidance import ObstacleAvoider
 from tanks.command_system import CommandExecutor
+
+
+def _load_level_json(level_path: Path) -> dict:
+    """Load a level file as raw JSON dict for serving to browser clients."""
+    import json
+    with open(level_path) as f:
+        return json.load(f)
 
 
 def _apply_with_avoidance(tank, cmd, level, avoider):
@@ -265,18 +278,26 @@ def _run_manual(level_path: Path, existing_screen=None, existing_assets=None, ga
         pygame.quit()
 
 
-def _run_game(level_path: Path):
-    """Main game mode: title screen -> 1P/2P via API."""
+def _run_game(level_path: Path, headless: bool = False):
+    """Main game mode: title screen -> 1P/2P via API.
+
+    Args:
+        level_path: Path to the level file.
+        headless: If True, run without display (server-only mode for browser play).
+    """
     pygame.init()
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption(WINDOW_TITLE)
+    if headless:
+        screen = pygame.display.set_mode((1, 1))
+    else:
+        screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        pygame.display.set_caption(WINDOW_TITLE)
     clock = pygame.time.Clock()
 
     asset_mgr = AssetManager()
     asset_mgr.load_all()
 
     current_level = load_level(level_path)
-    renderer = LevelRenderer(screen, asset_mgr)
+    renderer = None if headless else LevelRenderer(screen, asset_mgr)
     game_state = GameState()
     game_history = GameHistory()
 
@@ -305,7 +326,7 @@ def _run_game(level_path: Path):
     )
     api_thread.start()
 
-    def start_game(mode: GameMode):
+    def start_game(mode: GameMode, _from_api: bool = False):
         nonlocal phase, tanks, ai_controller, demo_controller
         nonlocal p1_queue, p2_queue, ai_queue
         nonlocal p1_avoider, p2_avoider
@@ -366,73 +387,106 @@ def _run_game(level_path: Path):
 
         phase = GamePhase.PLAYING
 
+    def return_to_title():
+        """Return to title screen, stopping AI/demo controllers."""
+        nonlocal phase, ai_controller, demo_controller
+        phase = GamePhase.TITLE_SCREEN
+        game_state.phase = GamePhase.TITLE_SCREEN
+        if ai_controller:
+            ai_controller.stop()
+            ai_controller = None
+        if demo_controller:
+            demo_controller.stop()
+            demo_controller = None
+        import tanks.tank_api as api_module
+        api_module._p1_queue = None
+        api_module._p2_queue = None
+
+    # Control queue for thread-safe game lifecycle commands from the API
+    control_queue = Queue()
+
+    def api_start_game(mode: GameMode):
+        """Thread-safe wrapper: enqueue a start request for the main loop."""
+        control_queue.put(("start", mode))
+
+    def api_return_to_title():
+        """Thread-safe wrapper: enqueue a return-to-title request."""
+        control_queue.put(("return_to_title",))
+
+    # Expose thread-safe wrappers and level data to the API module
+    import tanks.tank_api as api_module
+    api_module._start_game_fn = api_start_game
+    api_module._return_to_title_fn = api_return_to_title
+    api_module._level_data = _load_level_json(level_path)
+
+    if headless:
+        print(f"\n[HEADLESS] Server running. Open http://localhost:{API_PORT}/play in your browser.")
+        print("[HEADLESS] Waiting for game start via browser or POST /start ...\n")
+
     running = True
     while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+        # ---- Process control queue (thread-safe game lifecycle from API) ----
+        while True:
+            try:
+                ctrl = control_queue.get_nowait()
+                if ctrl[0] == "start":
+                    start_game(ctrl[1])
+                elif ctrl[0] == "return_to_title":
+                    return_to_title()
+            except Empty:
+                break
 
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    if phase == GamePhase.PLAYING or phase == GamePhase.GAME_OVER:
-                        # Return to title screen from gameplay or game over
-                        phase = GamePhase.TITLE_SCREEN
-                        game_state.phase = GamePhase.TITLE_SCREEN
-                        if ai_controller:
-                            ai_controller.stop()
-                            ai_controller = None
-                        if demo_controller:
-                            demo_controller.stop()
-                            demo_controller = None
-                        # Clear API queue references when returning to title
-                        import tanks.tank_api as api_module
-                        api_module._p1_queue = None
-                        api_module._p2_queue = None
-                    elif phase == GamePhase.LOGS:
-                        # Return to title screen from logs
-                        phase = GamePhase.TITLE_SCREEN
-                        game_state.phase = GamePhase.TITLE_SCREEN
+        # ---- Event handling (GUI mode only) ----
+        if headless:
+            pygame.event.pump()  # Prevent pygame from freezing
+        else:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        if phase == GamePhase.PLAYING or phase == GamePhase.GAME_OVER:
+                            return_to_title()
+                            phase = GamePhase.TITLE_SCREEN
+                        elif phase == GamePhase.LOGS:
+                            phase = GamePhase.TITLE_SCREEN
+                            game_state.phase = GamePhase.TITLE_SCREEN
+                        elif phase == GamePhase.TITLE_SCREEN:
+                            running = False
+
                     elif phase == GamePhase.TITLE_SCREEN:
-                        # Exit program only from title screen
-                        running = False
+                        if event.key == pygame.K_UP:
+                            selected_index = (selected_index - 1) % 3
+                        elif event.key == pygame.K_DOWN:
+                            selected_index = (selected_index + 1) % 3
+                        elif event.key == pygame.K_RETURN:
+                            if selected_index == 0:
+                                _run_manual(level_path, screen, asset_mgr, game_history)
+                                pygame.display.set_caption(WINDOW_TITLE)
+                            elif selected_index == 2:
+                                phase = GamePhase.LOGS
+                            else:
+                                mode_map = {
+                                    1: GameMode.DEMO,
+                                }
+                                start_game(mode_map[selected_index])
 
-                elif phase == GamePhase.TITLE_SCREEN:
-                    if event.key == pygame.K_UP:
-                        selected_index = (selected_index - 1) % 3
-                    elif event.key == pygame.K_DOWN:
-                        selected_index = (selected_index + 1) % 3
-                    elif event.key == pygame.K_RETURN:
-                        if selected_index == 0:
-                            # Manual mode - run separate game loop
-                            _run_manual(level_path, screen, asset_mgr, game_history)
-                            # When manual mode exits, we return to title screen
-                            # Restore title screen caption
-                            pygame.display.set_caption(WINDOW_TITLE)
-                        elif selected_index == 2:
-                            # Logs - view game history
-                            phase = GamePhase.LOGS
-                        else:
-                            mode_map = {
-                                # 0: GameMode.ONE_PLAYER,   # Commented out
-                                # 1: GameMode.TWO_PLAYER,   # Commented out
-                                1: GameMode.DEMO,
-                            }
-                            start_game(mode_map[selected_index])
+                    elif phase == GamePhase.GAME_OVER:
+                        if event.key == pygame.K_RETURN:
+                            phase = GamePhase.TITLE_SCREEN
+                            game_state.phase = GamePhase.TITLE_SCREEN
 
-                elif phase == GamePhase.GAME_OVER:
-                    if event.key == pygame.K_RETURN:
-                        phase = GamePhase.TITLE_SCREEN
-                        game_state.phase = GamePhase.TITLE_SCREEN
-
-                elif phase == GamePhase.PLAYING:
-                    if event.key == pygame.K_g:
-                        renderer.show_grid = not renderer.show_grid
-                    elif event.key == pygame.K_c:
-                        renderer.show_collision = not renderer.show_collision
+                    elif phase == GamePhase.PLAYING:
+                        if event.key == pygame.K_g:
+                            renderer.show_grid = not renderer.show_grid
+                        elif event.key == pygame.K_c:
+                            renderer.show_collision = not renderer.show_collision
 
         # ---- Title Screen ----
         if phase == GamePhase.TITLE_SCREEN:
-            renderer.render_title_screen(selected_index)
+            if not headless:
+                renderer.render_title_screen(selected_index)
 
         # ---- Playing ----
         elif phase == GamePhase.PLAYING and tanks:
@@ -586,31 +640,48 @@ def _run_game(level_path: Path):
             game_state.update_tank("player1", tanks[0])
             game_state.update_tank("player2", tanks[1])
 
+            # Update demo scenario info for browser overlay
+            if demo_controller and game_state.mode == GameMode.DEMO:
+                sc = demo_controller.scenario_display
+                game_state.demo = {
+                    "description": sc.get("description", ""),
+                    "blue": sc.get("blue", ""),
+                    "red": sc.get("red", ""),
+                    "index": demo_controller.current_scenario_index,
+                    "total": len(DEMO_SCENARIOS),
+                }
+            else:
+                game_state.demo = None
+
             # Log periodic snapshots every 100 ticks (~3.3 seconds at 30 FPS)
             if game_history.should_snapshot(game_state.tick):
                 game_history.log_snapshot(game_state.tick, game_state.snapshot())
 
-            # Render
-            renderer.render(current_level, tanks)
+            # Render (GUI mode only)
+            if not headless:
+                renderer.render(current_level, tanks)
 
-            # Demo overlay
-            if demo_controller and game_state.mode == GameMode.DEMO:
-                renderer.render_demo_overlay(
-                    demo_controller.scenario_display,
-                    demo_controller.current_scenario_index,
-                    len(DEMO_SCENARIOS),
-                )
+                # Demo overlay
+                if demo_controller and game_state.mode == GameMode.DEMO:
+                    renderer.render_demo_overlay(
+                        demo_controller.scenario_display,
+                        demo_controller.current_scenario_index,
+                        len(DEMO_SCENARIOS),
+                    )
 
         # ---- Game Over ----
         elif phase == GamePhase.GAME_OVER:
-            renderer.render(current_level, tanks)
-            renderer.render_game_over(game_state.winner or "???")
+            if not headless:
+                renderer.render(current_level, tanks)
+                renderer.render_game_over(game_state.winner or "???")
 
         # ---- Logs Screen ----
         elif phase == GamePhase.LOGS:
-            renderer.render_logs_screen(game_history)
+            if not headless:
+                renderer.render_logs_screen(game_history)
 
-        pygame.display.flip()
+        if not headless:
+            pygame.display.flip()
         clock.tick(FPS)
 
     if ai_controller:
@@ -623,7 +694,8 @@ def _run_game(level_path: Path):
 def main():
     args = sys.argv[1:]
     manual = "--manual" in args
-    args = [a for a in args if a != "--manual"]
+    headless = "--headless" in args
+    args = [a for a in args if a not in ("--manual", "--headless")]
     level_path = Path(args[0]) if args else LEVELS_DIR / "default.json"
 
     if not level_path.exists():
@@ -633,7 +705,7 @@ def main():
     if manual:
         _run_manual(level_path)
     else:
-        _run_game(level_path)
+        _run_game(level_path, headless=headless)
 
 
 if __name__ == "__main__":

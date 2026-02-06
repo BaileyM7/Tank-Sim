@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Arena</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a2e;
+            color: #eee;
+            font-family: 'Segoe UI', 'Courier New', monospace;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 10px;
+        }
+        #game-container {
+            position: relative;
+            margin: 8px 0;
+        }
+        canvas {
+            border: 2px solid #333;
+            display: block;
+            background: #111;
+        }
+
+        /* ---- Title Screen Overlay ---- */
+        #title-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(10, 10, 30, 0.92);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #title-overlay h1 {
+            font-size: 64px;
+            color: #ffd700;
+            text-shadow: 0 0 20px rgba(255,215,0,0.5);
+            margin-bottom: 10px;
+        }
+        #title-overlay .subtitle {
+            color: #888;
+            font-size: 18px;
+            margin-bottom: 40px;
+        }
+        .menu-btn {
+            display: block;
+            width: 280px;
+            padding: 16px;
+            margin: 8px 0;
+            font-size: 20px;
+            font-family: inherit;
+            border: 2px solid #555;
+            border-radius: 8px;
+            background: #2a2a3e;
+            color: #eee;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .menu-btn:hover {
+            background: #3a3a5e;
+            border-color: #ffd700;
+            color: #ffd700;
+        }
+
+        /* ---- Game Over Overlay ---- */
+        #gameover-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #gameover-overlay h2 {
+            font-size: 52px;
+            margin-bottom: 20px;
+        }
+
+        /* ---- HUD bar ---- */
+        #hud {
+            width: 100%;
+            max-width: 1800px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+        .hud-panel {
+            background: #222;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 8px 14px;
+            font-size: 14px;
+        }
+        .hud-panel.blue { border-left: 3px solid #6ac3ff; }
+        .hud-panel.red  { border-left: 3px solid #ff6a6a; }
+        .hud-panel .label { color: #888; font-size: 12px; }
+
+        /* ---- Strategy input ---- */
+        #strategy-bar {
+            width: 100%;
+            max-width: 1800px;
+            display: none;
+            gap: 8px;
+            margin-top: 6px;
+            align-items: center;
+        }
+        #strategy-bar input {
+            flex: 1;
+            padding: 10px 14px;
+            font-size: 15px;
+            font-family: inherit;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 6px;
+            color: #eee;
+            outline: none;
+        }
+        #strategy-bar input:focus { border-color: #6ac3ff; }
+        #strategy-bar button {
+            padding: 10px 20px;
+            font-size: 15px;
+            font-family: inherit;
+            background: #2a4a6a;
+            border: 1px solid #4a7aaa;
+            border-radius: 6px;
+            color: #eee;
+            cursor: pointer;
+        }
+        #strategy-bar button:hover { background: #3a5a8a; }
+        #strategy-status {
+            font-size: 13px;
+            color: #888;
+            padding: 0 8px;
+            white-space: nowrap;
+        }
+
+        /* ---- Controls hint ---- */
+        #controls-hint {
+            width: 100%;
+            max-width: 1800px;
+            display: none;
+            margin-top: 4px;
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+        }
+
+        /* ---- Logs Overlay ---- */
+        #logs-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(20, 20, 30, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            z-index: 10;
+            overflow-y: auto;
+            padding: 30px;
+        }
+        #logs-overlay h2 {
+            font-size: 40px;
+            color: #ffd700;
+            margin-bottom: 20px;
+        }
+        #logs-content {
+            width: 100%;
+            max-width: 1600px;
+            display: flex;
+            gap: 40px;
+        }
+        .log-column {
+            flex: 1;
+            min-width: 0;
+        }
+        .log-column h3 {
+            font-size: 24px;
+            margin-bottom: 14px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid;
+        }
+        .log-column.blue h3 { color: #6ac3ff; border-color: #6ac3ff; }
+        .log-column.red h3  { color: #ff6a6a; border-color: #ff6a6a; }
+        .log-entry {
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 4px 0;
+            color: #bbb;
+        }
+        .log-entry .tick { color: #888; }
+        .log-section {
+            background: #1a1a2a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 12px;
+        }
+        .log-section-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #ccc;
+            margin-bottom: 8px;
+        }
+        .log-hint {
+            color: #666;
+            font-size: 15px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="1800" height="1200"></canvas>
+
+    <!-- Title Screen -->
+    <div id="title-overlay">
+        <h1>TANK ARENA</h1>
+        <div class="subtitle">Browser Edition</div>
+        <button class="menu-btn" onclick="startGame('1p')">1 Player (vs AI)</button>
+        <button class="menu-btn" onclick="startGame('demo')">Demo Mode</button>
+        <button class="menu-btn" onclick="showLogs()">Game Logs</button>
+    </div>
+
+    <!-- Game Over -->
+    <div id="gameover-overlay">
+        <h2 id="winner-text"></h2>
+        <button class="menu-btn" onclick="restartGame()">Play Again</button>
+        <button class="menu-btn" onclick="backToTitle()">Back to Menu</button>
+    </div>
+
+    <!-- Logs Screen -->
+    <div id="logs-overlay">
+        <h2>GAME LOGS - DETAILED VIEW</h2>
+        <div id="logs-content"></div>
+        <div class="log-hint">Press ESC to return to menu</div>
+    </div>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+    <div class="hud-panel blue">
+        <span class="label">BLUE</span> |
+        <span id="p1-pos">--</span> |
+        HP: <span id="p1-hp">3</span>/3 |
+        <span id="p1-angle">0</span>deg
+    </div>
+    <div class="hud-panel" id="tick-display">
+        <span class="label">TICK</span> <span id="tick-val">0</span>
+    </div>
+    <div class="hud-panel red">
+        <span class="label">RED</span> |
+        <span id="p2-pos">--</span> |
+        HP: <span id="p2-hp">3</span>/3 |
+        <span id="p2-angle">0</span>deg
+    </div>
+</div>
+
+<!-- Strategy Input -->
+<div id="strategy-bar">
+    <input type="text" id="strategy-input"
+           placeholder="e.g. patrol between B2 and B9 and shoot at anything in your sight"
+           onkeydown="if(event.key==='Enter')sendStrategy()">
+    <button onclick="sendStrategy()">Send Strategy</button>
+    <button onclick="clearStrategy()">Stop</button>
+    <span id="strategy-status"></span>
+</div>
+
+<!-- Controls Hint -->
+<div id="controls-hint">
+    WASD - Move | SPACE - Shoot | Type a strategy below for autonomous control
+</div>
+
+<script>
+// ============================================================
+// Configuration
+// ============================================================
+const CANVAS_W = 1800, CANVAS_H = 1200, CELL = 100;
+const COLS = CANVAS_W / CELL, ROWS = CANVAS_H / CELL;
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// ============================================================
+// State
+// ============================================================
+let gameState = null;
+let levelData = null;
+let ws = null;
+let currentPhase = 'title_screen';
+let lastMode = '1p';
+let keysPressed = new Set();
+let lastSentCommand = null;
+let commandInterval = null;
+
+// Sprite cache
+const sprites = {};
+const spriteLoadPromises = [];
+
+// ============================================================
+// Asset Loading
+// ============================================================
+function loadSprite(key, url) {
+    const img = new Image();
+    const p = new Promise((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => { console.warn('Failed to load:', url); resolve(); };
+    });
+    img.src = url;
+    sprites[key] = img;
+    spriteLoadPromises.push(p);
+}
+
+// Terrain
+loadSprite('grass', '/assets/Environment/grass.png');
+loadSprite('dirt',  '/assets/Environment/dirt.png');
+loadSprite('sand',  '/assets/Environment/sand.png');
+
+// Obstacles
+loadSprite('tree_large',    '/assets/Environment/treeLarge.png');
+loadSprite('tree_small',    '/assets/Environment/treeSmall.png');
+loadSprite('sandbag_beige', '/assets/Obstacles/sandbagBeige.png');
+loadSprite('sandbag_brown', '/assets/Obstacles/sandbagBrown.png');
+loadSprite('barrel_green',  '/assets/Obstacles/barrelGreen_up.png');
+loadSprite('barrel_grey',   '/assets/Obstacles/barrelGrey_up.png');
+loadSprite('barrel_red',    '/assets/Obstacles/barrelRed_up.png');
+loadSprite('oil',           '/assets/Obstacles/oil.png');
+
+// Tanks
+loadSprite('tankBlue',    '/assets/Tanks/tankBlue.png');
+loadSprite('barrelBlue',  '/assets/Tanks/barrelBlue.png');
+loadSprite('tankRed',     '/assets/Tanks/tankRed.png');
+loadSprite('barrelRed',   '/assets/Tanks/barrelRed.png');
+
+// Bullets
+loadSprite('bulletBlue', '/assets/Bullets/bulletBlue.png');
+loadSprite('bulletRed',  '/assets/Bullets/bulletRed.png');
+
+// ============================================================
+// Level Loading
+// ============================================================
+async function loadLevel() {
+    try {
+        const resp = await fetch('/level');
+        if (resp.ok) levelData = await resp.json();
+    } catch (e) {
+        console.warn('Could not load level data:', e);
+    }
+}
+
+// ============================================================
+// WebSocket Connection
+// ============================================================
+function connectWS() {
+    if (ws && ws.readyState <= 1) return; // already open or connecting
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+    ws.onmessage = (evt) => {
+        try {
+            gameState = JSON.parse(evt.data);
+            handlePhaseChange(gameState.phase);
+            render();
+            updateHUD();
+        } catch (e) {}
+    };
+
+    ws.onclose = () => {
+        // Reconnect after 1 second
+        setTimeout(connectWS, 1000);
+    };
+
+    ws.onerror = () => {
+        ws.close();
+    };
+}
+
+function wsSend(obj) {
+    if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify(obj));
+    }
+}
+
+// ============================================================
+// Game Control
+// ============================================================
+async function startGame(mode) {
+    lastMode = mode;
+    userOnTitle = false; // Clear guard -- user is starting a game
+    document.getElementById('title-overlay').style.display = 'none';
+    document.getElementById('gameover-overlay').style.display = 'none';
+    document.getElementById('logs-overlay').style.display = 'none';
+    document.getElementById('strategy-bar').style.display = 'flex';
+    document.getElementById('controls-hint').style.display = 'block';
+
+    wsSend({ start: mode });
+
+    // Also send via HTTP as fallback
+    try {
+        await fetch('/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+    } catch (e) {}
+}
+
+function restartGame() {
+    document.getElementById('gameover-overlay').style.display = 'none';
+
+    wsSend({ restart: lastMode });
+
+    fetch('/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: lastMode })
+    }).catch(() => {});
+}
+
+let userOnTitle = false; // True when user manually navigated to title
+
+function backToTitle() {
+    // Tell the server to return to title screen
+    wsSend({ return_to_title: true });
+
+    document.getElementById('gameover-overlay').style.display = 'none';
+    document.getElementById('logs-overlay').style.display = 'none';
+    document.getElementById('title-overlay').style.display = 'flex';
+    document.getElementById('strategy-bar').style.display = 'none';
+    document.getElementById('controls-hint').style.display = 'none';
+    document.getElementById('strategy-status').textContent = '';
+    currentPhase = 'title_screen';
+    userOnTitle = true; // Block server phase overrides until user starts a game
+}
+
+function handlePhaseChange(phase) {
+    if (phase === currentPhase) return;
+    // If user clicked "Back to Menu", ignore server phase until they start a new game
+    if (userOnTitle && phase !== 'title_screen') return;
+    // Don't let server phase updates override client-only screens like logs
+    if (currentPhase === 'logs') return;
+    currentPhase = phase;
+
+    if (phase === 'game_over') {
+        const overlay = document.getElementById('gameover-overlay');
+        const winnerText = document.getElementById('winner-text');
+        const winner = gameState.winner || '???';
+        const color = winner === 'Blue' ? '#6ac3ff' : '#ff6a6a';
+        winnerText.textContent = `${winner} Wins!`;
+        winnerText.style.color = color;
+        overlay.style.display = 'flex';
+    } else if (phase === 'playing') {
+        document.getElementById('gameover-overlay').style.display = 'none';
+        document.getElementById('title-overlay').style.display = 'none';
+        document.getElementById('strategy-bar').style.display = 'flex';
+        document.getElementById('controls-hint').style.display = 'block';
+    } else if (phase === 'title_screen') {
+        document.getElementById('title-overlay').style.display = 'flex';
+        document.getElementById('gameover-overlay').style.display = 'none';
+        document.getElementById('strategy-bar').style.display = 'none';
+        document.getElementById('controls-hint').style.display = 'none';
+    }
+}
+
+// ============================================================
+// Strategy Input
+// ============================================================
+function sendStrategy() {
+    const input = document.getElementById('strategy-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    wsSend({ strategy: text });
+
+    // HTTP fallback
+    fetch('/player1/strategy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+    }).catch(() => {});
+
+    document.getElementById('strategy-status').textContent = `Active: ${text}`;
+    input.value = '';
+}
+
+function clearStrategy() {
+    wsSend({ strategy: 'stop' });
+
+    fetch('/player1/strategy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: 'stop' })
+    }).catch(() => {});
+
+    document.getElementById('strategy-status').textContent = '';
+}
+
+// ============================================================
+// Keyboard Controls
+// ============================================================
+document.addEventListener('keydown', (e) => {
+    // ESC returns to main menu from any screen
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        if (currentPhase === 'logs') {
+            hideLogs();
+        } else if (currentPhase === 'playing' || currentPhase === 'game_over') {
+            backToTitle();
+        }
+        return;
+    }
+
+    // Don't capture when typing in strategy input
+    if (document.activeElement === document.getElementById('strategy-input')) return;
+    if (currentPhase !== 'playing') return;
+
+    const key = e.key.toLowerCase();
+    keysPressed.add(key);
+
+    if (key === ' ') {
+        e.preventDefault();
+        sendCommand('shoot');
+    }
+
+    if (!commandInterval) {
+        sendKeyCommands();
+        commandInterval = setInterval(sendKeyCommands, 33); // Match 30 FPS
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    keysPressed.delete(e.key.toLowerCase());
+    if (keysPressed.size === 0) {
+        lastSentCommand = null;
+        if (commandInterval) {
+            clearInterval(commandInterval);
+            commandInterval = null;
+        }
+    }
+});
+
+function sendKeyCommands() {
+    // Send ALL held movement commands each tick for smooth simultaneous movement+rotation
+    if (keysPressed.has('w')) sendCommand('forward');
+    else if (keysPressed.has('s')) sendCommand('backward');
+    if (keysPressed.has('a')) sendCommand('rotate_left');
+    else if (keysPressed.has('d')) sendCommand('rotate_right');
+}
+
+function sendCommand(cmd) {
+    wsSend({ command: cmd });
+}
+
+// ============================================================
+// Rendering
+// ============================================================
+function render() {
+    if (!gameState) return;
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    drawTerrain();
+    drawObstacles();
+    drawBullets();
+    drawTanks();
+    drawGrid();  // Last so grid labels are always on top
+    drawDemoOverlay();  // Demo banner on top of everything
+}
+
+function drawDemoOverlay() {
+    if (!gameState || !gameState.demo) return;
+    const demo = gameState.demo;
+
+    const bannerH = 140;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+    ctx.fillRect(0, 0, CANVAS_W, bannerH);
+
+    // Header line
+    ctx.font = 'bold 28px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(
+        `DEMO MODE - ${demo.description}  (Example ${demo.index + 1}/${demo.total})`,
+        CANVAS_W / 2, 36
+    );
+
+    // Blue command
+    ctx.font = '22px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#78a0ff';
+    ctx.fillText(`Blue: ${demo.blue}`, 32, 76);
+
+    // Red command
+    ctx.fillStyle = '#ff8278';
+    ctx.fillText(`Red: ${demo.red}`, 32, 108);
+}
+
+function drawTerrain() {
+    if (!levelData || !levelData.terrain) {
+        // Fallback: dark green
+        ctx.fillStyle = '#2d4a1e';
+        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        return;
+    }
+
+    const terrain = levelData.terrain;
+    for (let row = 0; row < terrain.length; row++) {
+        for (let col = 0; col < terrain[row].length; col++) {
+            const type = terrain[row][col];
+            const img = sprites[type];
+            const x = col * CELL, y = row * CELL;
+            if (img && img.complete && img.naturalWidth > 0) {
+                ctx.drawImage(img, x, y, CELL, CELL);
+            } else {
+                // Fallback colors
+                const colors = { grass: '#4a7a2e', dirt: '#8b6914', sand: '#c2b280' };
+                ctx.fillStyle = colors[type] || '#333';
+                ctx.fillRect(x, y, CELL, CELL);
+            }
+        }
+    }
+}
+
+function drawObstacles() {
+    if (!levelData || !levelData.obstacles) return;
+
+    for (const obs of levelData.obstacles) {
+        const key = obs.type;
+        const img = sprites[key];
+        const span = obs.span || [1, 1];
+        const x = obs.col * CELL, y = obs.row * CELL;
+        const w = span[0] * CELL, h = span[1] * CELL;
+
+        if (img && img.complete && img.naturalWidth > 0) {
+            ctx.drawImage(img, x, y, w, h);
+        } else {
+            // Fallback
+            ctx.fillStyle = 'rgba(100, 80, 60, 0.6)';
+            ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+        }
+    }
+}
+
+function drawGrid() {
+    // Grid lines
+    ctx.strokeStyle = 'rgba(0,0,0,0.50)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    for (let x = 0; x <= CANVAS_W; x += CELL) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke();
+    }
+    for (let y = 0; y <= CANVAS_H; y += CELL) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_W, y); ctx.stroke();
+    }
+
+    ctx.setLineDash([]); // Reset dash
+
+    // Grid labels -- always visible with high contrast
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let c = 0; c < COLS; c++) {
+        const label = String.fromCharCode(65 + c);
+        const lx = c * CELL + CELL / 2;
+        // Top edge label with background
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(lx - 9, 2, 18, 16);
+        ctx.fillStyle = '#ddd';
+        ctx.fillText(label, lx, 11);
+        // Bottom edge label
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(lx - 9, CANVAS_H - 18, 18, 16);
+        ctx.fillStyle = '#ddd';
+        ctx.fillText(label, lx, CANVAS_H - 9);
+    }
+    ctx.textAlign = 'center';
+    for (let r = 0; r < ROWS; r++) {
+        const label = String(r + 1);
+        const ly = r * CELL + CELL / 2;
+        // Left edge label with background
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(2, ly - 8, 18, 16);
+        ctx.fillStyle = '#ddd';
+        ctx.fillText(label, 11, ly);
+        // Right edge label
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(CANVAS_W - 20, ly - 8, 18, 16);
+        ctx.fillStyle = '#ddd';
+        ctx.fillText(label, CANVAS_W - 11, ly);
+    }
+    ctx.textBaseline = 'alphabetic'; // reset
+}
+
+function drawBullets() {
+    if (!gameState || !gameState.tanks) return;
+
+    for (const [pkey, tank] of Object.entries(gameState.tanks)) {
+        if (!tank || !tank.bullets) continue;
+        const color = tank.color;
+        const sprKey = color === 'Blue' ? 'bulletBlue' : 'bulletRed';
+        const img = sprites[sprKey];
+
+        for (const b of tank.bullets) {
+            const rad = b.angle * Math.PI / 180;
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            ctx.rotate(rad);
+            if (img && img.complete && img.naturalWidth > 0) {
+                ctx.drawImage(img, -4, -8, 8, 16);
+            } else {
+                ctx.fillStyle = color === 'Blue' ? '#6ac3ff' : '#ff6a6a';
+                ctx.fillRect(-3, -6, 6, 12);
+            }
+            ctx.restore();
+        }
+    }
+}
+
+function drawTanks() {
+    if (!gameState || !gameState.tanks) return;
+
+    const order = ['player2', 'player1']; // Draw player1 on top
+    for (const pkey of order) {
+        const tank = gameState.tanks[pkey];
+        if (!tank || !tank.alive) continue;
+
+        const color = tank.color; // "Blue" or "Red"
+        const bodyImg = sprites['tank' + color];
+        const barrelImg = sprites['barrel' + color];
+        const rad = tank.angle * Math.PI / 180;
+
+        ctx.save();
+        ctx.translate(tank.x, tank.y);
+        ctx.rotate(rad);
+
+        // Tank body
+        if (bodyImg && bodyImg.complete && bodyImg.naturalWidth > 0) {
+            const size = CELL * 0.85;
+            ctx.drawImage(bodyImg, -size/2, -size/2, size, size);
+        } else {
+            ctx.fillStyle = color === 'Blue' ? '#6ac3ff' : '#ff6a6a';
+            ctx.fillRect(-25, -25, 50, 50);
+        }
+
+        // Barrel
+        if (barrelImg && barrelImg.complete && barrelImg.naturalWidth > 0) {
+            const bw = 18, bh = 50;
+            ctx.drawImage(barrelImg, -bw/2, -bh - 4, bw, bh);
+        } else {
+            ctx.fillStyle = color === 'Blue' ? '#4a9adf' : '#df4a4a';
+            ctx.fillRect(-5, -42, 10, 30);
+        }
+
+        ctx.restore();
+
+        // Health bar (not rotated)
+        const hpW = 60, hpH = 6;
+        const hpX = tank.x - hpW / 2;
+        const hpY = tank.y - CELL * 0.5;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(hpX, hpY, hpW, hpH);
+        const hpFrac = tank.health / 3;
+        ctx.fillStyle = hpFrac > 0.34 ? '#4caf50' : '#f44336';
+        ctx.fillRect(hpX, hpY, hpW * hpFrac, hpH);
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 0.5;
+        ctx.strokeRect(hpX, hpY, hpW, hpH);
+
+        // Name label
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = color === 'Blue' ? '#6ac3ff' : '#ff6a6a';
+        ctx.fillText(color, tank.x, hpY - 4);
+    }
+}
+
+// ============================================================
+// HUD Updates
+// ============================================================
+function updateHUD() {
+    if (!gameState) return;
+
+    document.getElementById('tick-val').textContent = gameState.tick || 0;
+
+    if (gameState.tanks) {
+        const p1 = gameState.tanks.player1;
+        const p2 = gameState.tanks.player2;
+
+        if (p1) {
+            const col = String.fromCharCode(65 + Math.floor(p1.x / CELL));
+            const row = Math.floor(p1.y / CELL) + 1;
+            document.getElementById('p1-pos').textContent = `${col}${row}`;
+            document.getElementById('p1-hp').textContent = p1.health;
+            document.getElementById('p1-angle').textContent = Math.round(p1.angle);
+        }
+
+        if (p2) {
+            const col = String.fromCharCode(65 + Math.floor(p2.x / CELL));
+            const row = Math.floor(p2.y / CELL) + 1;
+            document.getElementById('p2-pos').textContent = `${col}${row}`;
+            document.getElementById('p2-hp').textContent = p2.health;
+            document.getElementById('p2-angle').textContent = Math.round(p2.angle);
+        }
+    }
+
+    // Update strategy status from game state
+    if (gameState.strategies && gameState.strategies.player1) {
+        document.getElementById('strategy-status').textContent =
+            `Active: ${gameState.strategies.player1}`;
+    }
+}
+
+// ============================================================
+// Logs Screen
+// ============================================================
+async function showLogs() {
+    document.getElementById('title-overlay').style.display = 'none';
+    document.getElementById('logs-overlay').style.display = 'flex';
+    currentPhase = 'logs';
+
+    const container = document.getElementById('logs-content');
+    container.innerHTML = '<div style="color:#888;font-size:18px;">Loading logs...</div>';
+
+    try {
+        const resp = await fetch('/log?limit=200');
+        if (!resp.ok) throw new Error('No logs');
+        const data = await resp.json();
+        renderLogs(data, container);
+    } catch (e) {
+        container.innerHTML = '<div style="color:#888;font-size:18px;">No game history available. Play a game first!</div>';
+    }
+}
+
+function renderLogs(data, container) {
+    const commands = data.commands || [];
+    const snapshots = data.snapshots || [];
+
+    if (commands.length === 0 && snapshots.length === 0) {
+        container.innerHTML = '<div style="color:#888;font-size:18px;">No game history available. Play a game first!</div>';
+        return;
+    }
+
+    // Split commands by player
+    const p1Cmds = commands.filter(c => c.player === 'player1');
+    const p2Cmds = commands.filter(c => c.player === 'player2');
+
+    // Get recent snapshots (every 100 ticks)
+    const recentSnaps = snapshots.slice(-6);
+
+    let html = '';
+
+    // Snapshot section
+    if (recentSnaps.length > 0) {
+        html += '<div style="width:100%;margin-bottom:20px;">';
+        html += '<div class="log-section"><div class="log-section-title">Position Snapshots</div>';
+        html += '<table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:14px;">';
+        html += '<tr style="color:#888;border-bottom:1px solid #444;">';
+        html += '<th style="text-align:left;padding:6px;">Tick</th>';
+        html += '<th style="text-align:left;padding:6px;color:#6ac3ff;">Blue Pos</th>';
+        html += '<th style="text-align:left;padding:6px;color:#6ac3ff;">Blue HP</th>';
+        html += '<th style="text-align:left;padding:6px;color:#6ac3ff;">Blue Angle</th>';
+        html += '<th style="text-align:left;padding:6px;color:#ff6a6a;">Red Pos</th>';
+        html += '<th style="text-align:left;padding:6px;color:#ff6a6a;">Red HP</th>';
+        html += '<th style="text-align:left;padding:6px;color:#ff6a6a;">Red Angle</th>';
+        html += '</tr>';
+
+        for (const snap of recentSnaps) {
+            const p1 = snap.tanks?.player1 || {};
+            const p2 = snap.tanks?.player2 || {};
+            const p1Cell = cellLabel(p1.x, p1.y);
+            const p2Cell = cellLabel(p2.x, p2.y);
+            html += `<tr style="border-bottom:1px solid #2a2a3a;">`;
+            html += `<td style="padding:6px;color:#888;">${snap.tick}</td>`;
+            html += `<td style="padding:6px;color:#aaccff;">${p1Cell}</td>`;
+            html += `<td style="padding:6px;color:#aaccff;">${p1.health ?? '-'}/${p1.max_health ?? 3}</td>`;
+            html += `<td style="padding:6px;color:#aaccff;">${Math.round(p1.angle ?? 0)}°</td>`;
+            html += `<td style="padding:6px;color:#ffaaaa;">${p2Cell}</td>`;
+            html += `<td style="padding:6px;color:#ffaaaa;">${p2.health ?? '-'}/${p2.max_health ?? 3}</td>`;
+            html += `<td style="padding:6px;color:#ffaaaa;">${Math.round(p2.angle ?? 0)}°</td>`;
+            html += '</tr>';
+        }
+        html += '</table></div></div>';
+    }
+
+    // Command columns
+    html += '<div style="display:flex;gap:40px;width:100%;">';
+
+    // Blue commands
+    html += '<div class="log-column blue"><h3>BLUE TANK (Player 1)</h3>';
+    html += '<div class="log-section">';
+    if (p1Cmds.length === 0) {
+        html += '<div class="log-entry" style="color:#666;">No commands recorded</div>';
+    } else {
+        for (const cmd of p1Cmds.slice(-30)) {
+            html += `<div class="log-entry"><span class="tick">T${cmd.tick}</span> ${cmd.command} <span style="color:#555;">(${cmd.command_type})</span></div>`;
+        }
+    }
+    html += '</div></div>';
+
+    // Red commands
+    html += '<div class="log-column red"><h3>RED TANK (Player 2)</h3>';
+    html += '<div class="log-section">';
+    if (p2Cmds.length === 0) {
+        html += '<div class="log-entry" style="color:#666;">No commands recorded</div>';
+    } else {
+        for (const cmd of p2Cmds.slice(-30)) {
+            html += `<div class="log-entry"><span class="tick">T${cmd.tick}</span> ${cmd.command} <span style="color:#555;">(${cmd.command_type})</span></div>`;
+        }
+    }
+    html += '</div></div>';
+
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function cellLabel(x, y) {
+    if (x == null || y == null) return '--';
+    const col = String.fromCharCode(65 + Math.floor(x / CELL));
+    const row = Math.floor(y / CELL) + 1;
+    return `${col}${row}`;
+}
+
+function hideLogs() {
+    document.getElementById('logs-overlay').style.display = 'none';
+    document.getElementById('title-overlay').style.display = 'flex';
+    currentPhase = 'title_screen';
+}
+
+// ============================================================
+// Initialization
+// ============================================================
+async function init() {
+    await Promise.all(spriteLoadPromises);
+    await loadLevel();
+    connectWS();
+
+    // Initial render
+    drawTerrain();
+    drawGrid();
+}
+
+init();
+</script>
+</body>
+</html>
