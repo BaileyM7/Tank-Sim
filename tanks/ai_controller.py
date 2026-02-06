@@ -63,7 +63,7 @@ class AIController:
     TICK_INTERVAL = 1 / 30  # 30 Hz -- match game FPS for smooth movement
     STRATEGY_CHANGE_MIN = 4.0  # Minimum seconds before changing strategy
     STRATEGY_CHANGE_MAX = 10.0  # Maximum seconds before changing strategy
-    STARTUP_DELAY = 3.0  # Seconds to wait before AI starts moving (gives player time)
+    STARTUP_DELAY = 5.0  # Seconds to wait before AI starts moving (gives player time)
 
     def __init__(self, command_queue: Queue, game_state,
                  my_color: str = "Red", level=None):

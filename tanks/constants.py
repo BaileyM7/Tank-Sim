@@ -11,9 +11,9 @@ WINDOW_TITLE = "Tank Arena"
 FPS = 30
 
 # ---- Paths ----
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent  # tanks/ directory
 ASSET_ROOT = PROJECT_ROOT / "Kenney_topdownTanks" / "PNG"
-LEVELS_DIR = Path(__file__).resolve().parent / "levels"
+LEVELS_DIR = PROJECT_ROOT / "levels"
 
 ENVIRONMENT_DIR = ASSET_ROOT / "Environment"
 OBSTACLES_DIR = ASSET_ROOT / "Obstacles"
@@ -124,6 +124,7 @@ class GamePhase(Enum):
     TITLE_SCREEN = "title_screen"
     PLAYING = "playing"
     GAME_OVER = "game_over"
+    LOGS = "logs"
 
 
 # ---- Game Modes ----

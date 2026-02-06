@@ -52,6 +52,19 @@ HYSTERESIS = 2            # Side must be this many probes clearer to override
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _is_currently_stuck(x: float, y: float, level) -> bool:
+    """Check if the tank's current position is colliding with obstacles."""
+    h = TANK_HITBOX_HALF
+    # Check all four corners of the tank's current hitbox
+    for cx, cy in [(x - h, y - h), (x + h, y - h),
+                   (x - h, y + h), (x + h, y + h)]:
+        col = int(cx // CELL_SIZE)
+        row = int(cy // CELL_SIZE)
+        if not level.is_passable(col, row):
+            return True
+    return False
+
+
 def _probe_direction(x: float, y: float, angle_deg: float, level,
                      radius: float = SENSE_RADIUS,
                      steps: int = PROBE_STEPS):
@@ -155,6 +168,21 @@ class ObstacleAvoider:
 
         Returns ``None`` when the path ahead is clear.
         """
+        # Check if tank is currently stuck in a wall
+        is_stuck = _is_currently_stuck(x, y, level)
+
+        if is_stuck:
+            # Tank is stuck - back up and rotate to get unstuck
+            left_clear, right_clear = _survey_sides(x, y, angle, level)
+
+            if self._committed is None:
+                self._committed = _pick_direction(
+                    left_clear, right_clear, x, y, angle, target_x, target_y,
+                )
+
+            # Back up while rotating to get unstuck
+            return [TankCommand.BACKWARD, self._committed]
+
         center_blocked, center_dist = _probe_direction(x, y, angle, level)
 
         if not center_blocked:

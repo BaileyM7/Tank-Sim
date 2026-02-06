@@ -40,7 +40,7 @@ class Bullet:
 
 
 class Tank:
-    def __init__(self, x: float, y: float, angle: float, color: str) -> None:
+    def __init__(self, x: float, y: float, angle: float, color: str, speed_multiplier: float = 1.0) -> None:
         self.x = x
         self.y = y
         self.angle = angle  # 0=up, 90=right, 180=down, 270=left
@@ -49,13 +49,15 @@ class Tank:
         self._last_shot_time = 0
         self.health: int = TANK_MAX_HEALTH
         self.alive: bool = True
+        self.speed_multiplier: float = speed_multiplier
 
     def _current_speed(self) -> float:
         """Return movement speed, reduced briefly after firing."""
         now = pygame.time.get_ticks()
+        base_speed = TANK_SPEED * self.speed_multiplier
         if now - self._last_shot_time < SHOOT_SLOWDOWN_MS:
-            return TANK_SPEED * SHOOT_SPEED_FACTOR
-        return TANK_SPEED
+            return base_speed * SHOOT_SPEED_FACTOR
+        return base_speed
 
     def handle_input(self, keys, level: Level) -> None:
         if not self.alive:
@@ -102,7 +104,16 @@ class Tank:
 
     def apply_command(self, command: TankCommand, level: Level) -> None:
         if not self.alive:
+            print(f"Tank {self.color} apply_command: not alive, ignoring {command}")
             return
+
+        # First, check if we're stuck and need to force unstuck
+        if not self._can_move_to(self.x, self.y, level):
+            print(f"Tank {self.color} is stuck at ({self.x:.1f}, {self.y:.1f}), force unstucking")
+            self._force_unstuck(level)
+            return
+
+        print(f"Tank {self.color} applying command: {command}")
 
         if command == TankCommand.ROTATE_LEFT:
             self.angle = (self.angle - TANK_ROTATION_SPEED) % 360
@@ -150,6 +161,46 @@ class Tank:
             if not level.is_passable(col, row):
                 return False
         return True
+
+    def _force_unstuck(self, level: Level) -> None:
+        """Push the tank out of walls when stuck."""
+        h = TANK_HITBOX_HALF
+        corners = [
+            (self.x - h, self.y - h),
+            (self.x + h, self.y - h),
+            (self.x - h, self.y + h),
+            (self.x + h, self.y + h),
+        ]
+
+        # Find which corners are in walls
+        push_x, push_y = 0.0, 0.0
+        stuck_count = 0
+
+        for cx, cy in corners:
+            col = int(cx // CELL_SIZE)
+            row = int(cy // CELL_SIZE)
+            if not level.is_passable(col, row):
+                # Calculate push direction away from this blocked cell
+                cell_center_x = col * CELL_SIZE + CELL_SIZE / 2
+                cell_center_y = row * CELL_SIZE + CELL_SIZE / 2
+                push_x += self.x - cell_center_x
+                push_y += self.y - cell_center_y
+                stuck_count += 1
+
+        if stuck_count > 0:
+            # Normalize and push out
+            magnitude = math.sqrt(push_x * push_x + push_y * push_y)
+            if magnitude > 0:
+                push_x = (push_x / magnitude) * TANK_SPEED * 2
+                push_y = (push_y / magnitude) * TANK_SPEED * 2
+
+                # Try to move in the push direction
+                nx = self.x + push_x
+                ny = self.y + push_y
+
+                # Force the movement (don't check collision for unstuck)
+                self.x = nx
+                self.y = ny
 
 
 def check_bullet_tank_collisions(tanks: List[Tank]) -> None:

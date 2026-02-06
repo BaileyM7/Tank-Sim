@@ -127,7 +127,7 @@ def has_clear_los(x1: float, y1: float, x2: float, y2: float,
 
 
 def is_in_sight(me: dict, target: dict,
-                fov: float = 120.0, max_range: float = 800.0,
+                fov: float = 120.0, max_range: float = 1200.0,
                 level=None) -> bool:
     """Check if *target* is within the FOV cone of *me*.
 
@@ -135,7 +135,7 @@ def is_in_sight(me: dict, target: dict,
         me: Snapshot dict with keys x, y, angle.
         target: Snapshot dict with keys x, y, alive.
         fov: Total field-of-view angle in degrees (cone is ±fov/2).
-        max_range: Maximum detection distance in pixels.
+        max_range: Maximum detection distance in pixels (default 1200 = 12 cells).
         level: Optional Level object. When provided, obstacles that
             block the line of sight cause this to return False.
     """

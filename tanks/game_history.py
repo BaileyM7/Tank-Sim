@@ -35,7 +35,7 @@ class GameHistory:
 
     Tracks:
     - All commands sent to tanks
-    - Periodic snapshots of game state (every 5 seconds / 150 frames at 30 FPS)
+    - Periodic snapshots of game state (every 100 ticks / ~3.3 seconds at 30 FPS)
 
     Uses circular buffers (deques) to automatically evict old entries when full.
     """
@@ -51,7 +51,7 @@ class GameHistory:
         self._snapshots = deque(maxlen=max_snapshots)
         self._lock = threading.Lock()
         self._last_snapshot_tick = 0
-        self._snapshot_interval = 150  # 5 seconds at 30 FPS
+        self._snapshot_interval = 100  # ~3.3 seconds at 30 FPS
 
     def log_command(self, tick: int, player: str, command: str, command_type: str) -> None:
         """Log a command sent to a tank.

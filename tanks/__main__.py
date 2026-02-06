@@ -65,22 +65,57 @@ def _spawn_tanks(level):
     tanks = []
     for key, player_num in [("player1", 1), ("player2", 2)]:
         sp = level.spawns[key]
+        # AI opponent (player2) moves at 75% speed
+        speed_mult = 0.75 if player_num == 2 else 1.0
         tanks.append(Tank(
             sp.col * CELL_SIZE + CELL_SIZE // 2,
             sp.row * CELL_SIZE + CELL_SIZE // 2,
             FACING_TO_ANGLE[sp.facing],
             PLAYER_TANK_COLORS[player_num],
+            speed_multiplier=speed_mult,
         ))
     return tanks
 
 
-def _run_manual(level_path: Path, existing_screen=None, existing_assets=None):
+def _render_controls_banner(screen, countdown_seconds):
+    """Render an info banner showing controls at the start of play mode."""
+    # Semi-transparent overlay
+    overlay = pygame.Surface((WINDOW_WIDTH, 280), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 200))
+    screen.blit(overlay, (0, WINDOW_HEIGHT // 2 - 140))
+
+    # Title
+    title_font = pygame.font.SysFont("consolas", 48, bold=True)
+    title_surf = title_font.render("CONTROLS", True, (255, 255, 100))
+    screen.blit(title_surf, title_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 90)))
+
+    # Controls
+    controls_font = pygame.font.SysFont("consolas", 32)
+    y_offset = WINDOW_HEIGHT // 2 - 30
+
+    controls = [
+        "WASD - Move  •  SPACE - Shoot  •  ESC - Quit",
+    ]
+
+    for control in controls:
+        surf = controls_font.render(control, True, (220, 220, 220))
+        screen.blit(surf, surf.get_rect(center=(WINDOW_WIDTH // 2, y_offset)))
+        y_offset += 45
+
+    # Footer with countdown
+    footer_font = pygame.font.SysFont("consolas", 28, bold=True)
+    footer = footer_font.render(f"AI will start moving: {countdown_seconds}", True, (150, 255, 150))
+    screen.blit(footer, footer.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 70)))
+
+
+def _run_manual(level_path: Path, existing_screen=None, existing_assets=None, game_history=None):
     """Manual mode: keyboard-controlled player 1 vs AI opponent.
 
     Args:
         level_path: Path to the level file
         existing_screen: Existing pygame screen surface (if called from title screen)
         existing_assets: Existing AssetManager (if called from title screen)
+        game_history: GameHistory object for logging (if called from title screen)
     """
     # If called from title screen, reuse pygame initialization
     if existing_screen is None:
@@ -106,6 +141,10 @@ def _run_manual(level_path: Path, existing_screen=None, existing_assets=None):
     game_state = GameState()
     tanks = _spawn_tanks(current_level)
 
+    # Create game history if not provided
+    if game_history is None:
+        game_history = GameHistory()
+
     # Set up game state for AI
     game_state.phase = GamePhase.PLAYING
     game_state.mode = GameMode.ONE_PLAYER
@@ -122,6 +161,10 @@ def _run_manual(level_path: Path, existing_screen=None, existing_assets=None):
 
     running = True
     game_over = False
+    start_time = pygame.time.get_ticks()
+    show_instructions = True
+    last_p1_cmd = None  # Track last player 1 command for logging
+
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -142,10 +185,34 @@ def _run_manual(level_path: Path, existing_screen=None, existing_assets=None):
             keys = pygame.key.get_pressed()
             tanks[0].handle_input(keys, current_level)
 
+            # Log player 1 keyboard inputs as commands
+            if tanks[0].alive:
+                # Detect current command from keyboard
+                current_cmd = None
+                if keys[pygame.K_w]:
+                    current_cmd = "forward"
+                elif keys[pygame.K_s]:
+                    current_cmd = "backward"
+                elif keys[pygame.K_a]:
+                    current_cmd = "rotate_left"
+                elif keys[pygame.K_d]:
+                    current_cmd = "rotate_right"
+                elif keys[pygame.K_SPACE]:
+                    current_cmd = "shoot"
+
+                # Update last command if a new one is detected
+                if current_cmd is not None:
+                    last_p1_cmd = current_cmd
+
+                # Always log the last command (persists until new command)
+                if last_p1_cmd:
+                    game_history.log_command(game_state.tick, "player1", last_p1_cmd, "direct")
+
             # Process AI commands for player 2
             while True:
                 try:
                     cmd = ai_queue.get_nowait()
+                    game_history.log_command(game_state.tick, "player2", cmd.value, "direct")
                     tanks[1].apply_command(cmd, current_level)
                 except Empty:
                     break
@@ -170,10 +237,23 @@ def _run_manual(level_path: Path, existing_screen=None, existing_assets=None):
             game_state.update_tank("player1", tanks[0])
             game_state.update_tank("player2", tanks[1])
 
+            # Log periodic snapshots every 100 ticks (~3.3 seconds at 30 FPS)
+            if game_history.should_snapshot(game_state.tick):
+                game_history.log_snapshot(game_state.tick, game_state.snapshot())
+
+        # Check if instructions should still be shown
+        elapsed_ms = pygame.time.get_ticks() - start_time
+        if elapsed_ms > 5000:
+            show_instructions = False
+
         # Render
         renderer.render(current_level, tanks)
         if game_over:
             renderer.render_game_over(game_state.winner or "???")
+        elif show_instructions:
+            # Show controls banner for first 5 seconds with countdown
+            countdown = max(0, 5 - (elapsed_ms // 1000))
+            _render_controls_banner(screen, countdown)
 
         pygame.display.flip()
         clock.tick(FPS)
@@ -205,7 +285,6 @@ def _run_game(level_path: Path):
     tanks = []
     ai_controller = None
     demo_controller = None
-    api_started = False
     p1_avoider = ObstacleAvoider()
     p2_avoider = ObstacleAvoider()
     p1_auto_shoot = False
@@ -218,8 +297,16 @@ def _run_game(level_path: Path):
     p2_queue = Queue()
     ai_queue = Queue()
 
+    # Start API server immediately (queues will be None until game mode starts)
+    api_thread = threading.Thread(
+        target=run_tank_api,
+        args=(None, None, game_state, game_history, API_HOST, API_PORT),
+        daemon=True,
+    )
+    api_thread.start()
+
     def start_game(mode: GameMode):
-        nonlocal phase, tanks, ai_controller, demo_controller, api_started
+        nonlocal phase, tanks, ai_controller, demo_controller
         nonlocal p1_queue, p2_queue, ai_queue
         nonlocal p1_avoider, p2_avoider
         nonlocal p1_auto_shoot, p2_auto_shoot
@@ -251,16 +338,13 @@ def _run_game(level_path: Path):
         game_state.update_tank("player1", tanks[0])
         game_state.update_tank("player2", tanks[1])
 
-        # Start API server once (skip for demo mode)
-        if not api_started and mode != GameMode.DEMO:
+        # Update API server queues (skip for demo mode)
+        if mode != GameMode.DEMO:
             p2_api_q = p2_queue if mode == GameMode.TWO_PLAYER else None
-            api_thread = threading.Thread(
-                target=run_tank_api,
-                args=(p1_queue, p2_api_q, game_state, game_history, API_HOST, API_PORT),
-                daemon=True,
-            )
-            api_thread.start()
-            api_started = True
+            # Update global API queue references
+            import tanks.tank_api as api_module
+            api_module._p1_queue = p1_queue
+            api_module._p2_queue = p2_api_q
 
         # Start AI for 1-player mode
         if mode == GameMode.ONE_PLAYER:
@@ -300,27 +384,38 @@ def _run_game(level_path: Path):
                         if demo_controller:
                             demo_controller.stop()
                             demo_controller = None
+                        # Clear API queue references when returning to title
+                        import tanks.tank_api as api_module
+                        api_module._p1_queue = None
+                        api_module._p2_queue = None
+                    elif phase == GamePhase.LOGS:
+                        # Return to title screen from logs
+                        phase = GamePhase.TITLE_SCREEN
+                        game_state.phase = GamePhase.TITLE_SCREEN
                     elif phase == GamePhase.TITLE_SCREEN:
                         # Exit program only from title screen
                         running = False
 
                 elif phase == GamePhase.TITLE_SCREEN:
                     if event.key == pygame.K_UP:
-                        selected_index = (selected_index - 1) % 4
+                        selected_index = (selected_index - 1) % 3
                     elif event.key == pygame.K_DOWN:
-                        selected_index = (selected_index + 1) % 4
+                        selected_index = (selected_index + 1) % 3
                     elif event.key == pygame.K_RETURN:
-                        if selected_index == 2:
+                        if selected_index == 0:
                             # Manual mode - run separate game loop
-                            _run_manual(level_path, screen, asset_mgr)
+                            _run_manual(level_path, screen, asset_mgr, game_history)
                             # When manual mode exits, we return to title screen
                             # Restore title screen caption
                             pygame.display.set_caption(WINDOW_TITLE)
+                        elif selected_index == 2:
+                            # Logs - view game history
+                            phase = GamePhase.LOGS
                         else:
                             mode_map = {
-                                0: GameMode.ONE_PLAYER,
-                                1: GameMode.TWO_PLAYER,
-                                3: GameMode.DEMO,
+                                # 0: GameMode.ONE_PLAYER,   # Commented out
+                                # 1: GameMode.TWO_PLAYER,   # Commented out
+                                1: GameMode.DEMO,
                             }
                             start_game(mode_map[selected_index])
 
@@ -355,6 +450,7 @@ def _run_game(level_path: Path):
             while True:
                 try:
                     item = p1_queue.get_nowait()
+                    print(f"[MAIN LOOP] Received from p1_queue: {item}")
                     if isinstance(item, tuple) and item[0] == "strategy":
                         _, text, parsed_cmds = item
                         p1_executor = CommandExecutor(level=current_level)
@@ -490,7 +586,7 @@ def _run_game(level_path: Path):
             game_state.update_tank("player1", tanks[0])
             game_state.update_tank("player2", tanks[1])
 
-            # Log periodic snapshots every ~5 seconds (150 frames at 30 FPS)
+            # Log periodic snapshots every 100 ticks (~3.3 seconds at 30 FPS)
             if game_history.should_snapshot(game_state.tick):
                 game_history.log_snapshot(game_state.tick, game_state.snapshot())
 
@@ -509,6 +605,10 @@ def _run_game(level_path: Path):
         elif phase == GamePhase.GAME_OVER:
             renderer.render(current_level, tanks)
             renderer.render_game_over(game_state.winner or "???")
+
+        # ---- Logs Screen ----
+        elif phase == GamePhase.LOGS:
+            renderer.render_logs_screen(game_history)
 
         pygame.display.flip()
         clock.tick(FPS)

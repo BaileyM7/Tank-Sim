@@ -15,7 +15,7 @@ class LevelRenderer:
     def __init__(self, screen: pygame.Surface, assets: AssetManager) -> None:
         self.screen = screen
         self.assets = assets
-        self.show_grid = False
+        self.show_grid = True
         self.show_collision = False
         self._label_font = None
 
@@ -228,7 +228,13 @@ class LevelRenderer:
 
         # Menu options
         option_font = pygame.font.SysFont("consolas", 64)
-        options = ["1 Player", "2 Players", "Manual", "Demo"]
+        options = [
+            # "1 Player",   # Commented out
+            # "2 Players",  # Commented out
+            "Play",
+            "Tutorial",
+            "Logs"
+        ]
         for i, label in enumerate(options):
             color = (255, 255, 100) if i == selected_index else (180, 170, 140)
             prefix = "> " if i == selected_index else "  "
@@ -266,6 +272,122 @@ class LevelRenderer:
         self.screen.blit(
             hint, hint.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 + 80))
         )
+
+    # ---- Logs Screen ----
+
+    def _pixel_to_cell(self, x: float, y: float) -> str:
+        """Convert pixel coordinates to cell notation (e.g., 'E5')."""
+        col = chr(ord('A') + int(x // CELL_SIZE))
+        row = int(y // CELL_SIZE) + 1
+        return f"{col}{row}"
+
+    def render_logs_screen(self, game_history) -> None:
+        """Display game logs from the last played game with detailed position data."""
+        self.screen.fill((30, 30, 35))
+
+        # Title
+        title_font = pygame.font.SysFont("consolas", 60, bold=True)
+        title_surf = title_font.render("GAME LOGS - DETAILED VIEW", True, (255, 255, 100))
+        self.screen.blit(title_surf, title_surf.get_rect(center=(WINDOW_WIDTH // 2, 60)))
+
+        if game_history is None:
+            # No logs available
+            msg_font = pygame.font.SysFont("consolas", 48)
+            msg = msg_font.render("No game history available", True, (180, 180, 180))
+            self.screen.blit(msg, msg.get_rect(center=(WINDOW_WIDTH // 2, 400)))
+        else:
+            # Get history data
+            history = game_history.get_history(limit=50)
+
+            # Column headers
+            header_font = pygame.font.SysFont("consolas", 32, bold=True)
+            y_pos = 140
+
+            # Blue tank header (left column)
+            blue_header = header_font.render("BLUE TANK (You)", True, (100, 150, 255))
+            self.screen.blit(blue_header, (80, y_pos))
+
+            # Red tank header (right column)
+            red_header = header_font.render("RED TANK (Opponent)", True, (255, 100, 100))
+            self.screen.blit(red_header, (950, y_pos))
+
+            y_pos += 50
+
+            # Merge snapshots with commands to show position data
+            # Filter to only show snapshots at 100-tick intervals
+            all_snapshots = history['snapshots']
+            filtered_snapshots = [s for s in all_snapshots if s.get('tick', 0) % 100 == 0]
+            # Get only the most recent 4 snapshots to prevent overflow
+            snapshots = filtered_snapshots[-4:]
+
+            data_font = pygame.font.SysFont("consolas", 20)
+            label_font = pygame.font.SysFont("consolas", 18, bold=True)
+
+            for snapshot in snapshots:
+                tanks = snapshot.get('tanks', {})
+                p1_data = tanks.get('player1', {})
+                p2_data = tanks.get('player2', {})
+                tick = snapshot.get('tick', 0)
+
+                # Find the most recent command for each player up to this tick
+                last_p1_cmd = "N/A"
+                last_p2_cmd = "N/A"
+
+                for cmd in history['commands']:
+                    if cmd['tick'] <= tick:
+                        if cmd['player'] == 'player1':
+                            last_p1_cmd = cmd['command'][:30]
+                        elif cmd['player'] == 'player2':
+                            last_p2_cmd = cmd['command'][:30]
+
+                # Draw tick separator under each column
+                tick_text = f"─── Tick {tick} ───"
+                tick_label_blue = label_font.render(tick_text, True, (120, 160, 200))
+                tick_label_red = label_font.render(tick_text, True, (200, 120, 120))
+
+                # Blue column tick
+                self.screen.blit(tick_label_blue, (80, y_pos))
+                # Red column tick
+                self.screen.blit(tick_label_red, (950, y_pos))
+                y_pos += 30
+
+                # Left column - Blue tank (player1)
+                if p1_data:
+                    x_pos = 80
+                    cell_pos = self._pixel_to_cell(p1_data.get('x', 0), p1_data.get('y', 0))
+                    p1_lines = [
+                        f"Position: {cell_pos}",
+                        f"Direction: {int(p1_data.get('angle', 0))}°",
+                        f"Health: {p1_data.get('health', 0)}/{p1_data.get('max_health', 3)}",
+                        f"Last Cmd: {last_p1_cmd}",
+                    ]
+                    for line in p1_lines:
+                        surf = data_font.render(line, True, (180, 200, 255))
+                        self.screen.blit(surf, (x_pos, y_pos))
+                        y_pos += 25
+                    y_pos -= 100  # Reset for right column
+
+                # Right column - Red tank (player2)
+                if p2_data:
+                    x_pos = 950
+                    cell_pos = self._pixel_to_cell(p2_data.get('x', 0), p2_data.get('y', 0))
+                    p2_lines = [
+                        f"Position: {cell_pos}",
+                        f"Direction: {int(p2_data.get('angle', 0))}°",
+                        f"Health: {p2_data.get('health', 0)}/{p2_data.get('max_health', 3)}",
+                        f"Last Cmd: {last_p2_cmd}",
+                    ]
+                    for line in p2_lines:
+                        surf = data_font.render(line, True, (255, 180, 180))
+                        self.screen.blit(surf, (x_pos, y_pos))
+                        y_pos += 25
+
+                y_pos += 35  # Space between entries
+
+        # Instructions
+        hint_font = pygame.font.SysFont("consolas", 28)
+        hint = hint_font.render("Press ESC to return to title", True, (120, 110, 100))
+        self.screen.blit(hint, hint.get_rect(center=(WINDOW_WIDTH // 2, 1130)))
 
     # ---- Demo Overlay ----
 

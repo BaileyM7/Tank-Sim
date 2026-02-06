@@ -21,7 +21,7 @@
     ["sand","sand","sand","sand","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","dirt","sand","sand","sand","sand"]
   ],
   "obstacles": [
-    {"type": "tree_large", "col": 1,  "row": 0,  "span": [2, 2]},
+    {"type": "tree_large", "col": 0,  "row": 0,  "span": [2, 2]},
     {"type": "tree_small", "col": 0,  "row": 2},
     {"type": "tree_large", "col": 15, "row": 0,  "span": [2, 2]},
 
@@ -35,7 +35,6 @@
     {"type": "tree_small", "col": 0,  "row": 9},
     {"type": "tree_large", "col": 15, "row": 10, "span": [2, 2]},
 
-    {"type": "sandbag_brown", "col": 6,  "row": 3},
     {"type": "sandbag_brown", "col": 7,  "row": 3},
     {"type": "sandbag_brown", "col": 8,  "row": 3},
     {"type": "sandbag_brown", "col": 9,  "row": 3},
@@ -49,7 +48,6 @@
     {"type": "sandbag_brown", "col": 5,  "row": 7},
     {"type": "sandbag_brown", "col": 6,  "row": 7},
     {"type": "sandbag_brown", "col": 7,  "row": 7},
-    {"type": "sandbag_brown", "col": 8,  "row": 7},
 
 
     {"type": "sandbag_brown", "col": 11, "row": 9},

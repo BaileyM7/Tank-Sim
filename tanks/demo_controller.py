@@ -38,8 +38,8 @@ DEMO_SCENARIOS: List[dict] = [
         "description": "Combat Patrol",
     },
     {
-        "blue": "Move to I3 and shoot at anything in your sight",
-        "red": "Guard position J9 and shoot at anything in your sight",
+        "blue": "Move to I6 and shoot at anything in your sight",
+        "red": "Guard position J7 and shoot at anything in your sight",
         "duration": 12.0,
         "description": "Assault vs Defense",
     },

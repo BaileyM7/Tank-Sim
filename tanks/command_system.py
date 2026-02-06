@@ -93,7 +93,7 @@ _PATTERNS = [
     # Supports: "guard E5", "defend position E5", "hold E5", "protect cell E5"
     (
         re.compile(
-            rf"{_GUARD_VERBS}\s+(?:(?:position|area|spot|point|the\s+)?{_TO_PREP}\s+)?{_CELL}",
+            rf"{_GUARD_VERBS}\s+(?:(?:position|area|spot|point|the)\s+)?(?:{_TO_PREP}\s+)?{_CELL}",
             re.IGNORECASE,
         ),
         lambda m: ParsedCommand(
